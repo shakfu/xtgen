@@ -78,7 +78,20 @@ class MessagedMethod(Object):
 
     @property
     def args(self):
-        return 'typed-args'
+        prefix = f'{self.parent.type} *x'
+
+        if len(self.params) == 0:
+            return prefix
+        else:
+            if (self.params == ['list']) or (len(self.params) > 6):
+                return f'{prefix}, t_symbol *s, int argc, t_atom *argv'
+            else:
+                types = []
+                for i, t in enumerate(self.params):
+                    types.append(self.parent.func_type_args[t]+str(i))
+                type_str = ', '.join(types)
+                return f'{prefix}, {type_str}'
+
 
     @property
     def class_addmethod(self):
@@ -131,10 +144,10 @@ class External:
         'anything': 'A_GIMME',
     }
 
-    constructer_args = {
-        'A_DEFFLOAT': 't_floatarg f',
-        'A_DEFSYMBOL': 't_symbol *s',
-        'A_GIMME': 't_symbol *s, int argc, t_atom *argv',
+    func_type_args = {
+        'float': 't_floatarg f',
+        'symbol': 't_symbol *s',
+        'anything': 't_symbol *s, int argc, t_atom *argv',
     }
 
     def __init__(self, **kwargs):
@@ -161,7 +174,7 @@ class External:
     def message_methods(self):
         return [MessagedMethod(self, **m) for m in self.ns.message_methods]
 
-def render(external=None, template='template.c.mako', outfile='out.c'):
+def render(external=None, template='template.c.mako'):
     if not external:
         with open('external.yml') as f:
             yml = yaml.safe_load(f.read())
@@ -169,6 +182,7 @@ def render(external=None, template='template.c.mako', outfile='out.c'):
 
     templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
     rendered = templ.render(e = External(**ext_yml))
+    outfile = ext_yml['name'] + '.c'
     with open(outfile,'w') as f:
         f.write(rendered)
     print(outfile, 'rendered')

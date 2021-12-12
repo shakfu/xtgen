@@ -1,9 +1,20 @@
-# ${name}
+# ${e.name}
 
-oneline description
+${e.meta['desc']}
+
+Author: ${e.meta['author']}
+
+Repo: ${e.meta['repo']}
+
 
 ## Parameters
-% for p in parameters:
+% for p in e.params:
 - ${p.name} (${p.type}) -- default: ${p.value}, min: ${p.min},  max: ${p.max}
+% endfor
+
+
+## Features:
+% for feature in e.meta['features']:
+- ${feature}
 % endfor
 

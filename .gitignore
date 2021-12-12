@@ -1,6 +1,6 @@
 legacy.py
-out.c
 counter.c
+counter.orig.c
 .DS_Store
 
 # Prerequisites

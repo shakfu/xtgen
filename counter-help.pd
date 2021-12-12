@@ -1,0 +1,27 @@
+#N canvas 215 111 466 332 12;
+#X obj 17 251 counter;
+#X obj 48 125 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X floatatom 99 123 5 0 0 0 - - -;
+#X obj 116 59 list 1 2 34 5;
+#X obj 116 33 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X symbolatom 31 59 10 0 0 0 - - -;
+#X obj 31 32 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
+-1;
+#X msg 17 6 1 2 hello bye 0.1;
+#X msg 185 98 reset;
+#X msg 185 123 bound 1 10;
+#X msg 184 147 steps x 10 y 20;
+#X msg 183 175 code 12 hello bye nice one 20 32;
+#X connect 1 0 0 0;
+#X connect 2 0 0 0;
+#X connect 3 0 0 0;
+#X connect 4 0 3 0;
+#X connect 5 0 0 0;
+#X connect 6 0 5 0;
+#X connect 7 0 0 0;
+#X connect 8 0 0 0;
+#X connect 9 0 0 0;
+#X connect 10 0 0 0;
+#X connect 11 0 0 0;

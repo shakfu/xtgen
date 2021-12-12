@@ -45,6 +45,7 @@ typedef struct _${e.name} {
  * ---------------------------------------------------------------------------
  */
 
+// typed-methods
 % for method in e.typed_methods:
 void ${e.name}_${method.type}(${method.args})
 {
@@ -53,7 +54,7 @@ void ${e.name}_${method.type}(${method.args})
 
 % endfor
 
-
+// message-methods
 % for method in e.message_methods:
 void ${e.name}_${method.name}(${method.args})
 {
@@ -83,12 +84,12 @@ void *${e.name}_new(t_symbol *s, int argc, t_atom *argv)
     % endif
 
     // create inlets
-    inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("list"), gensym("bound"));
-    floatinlet_new(&x->x_obj, &x->step);
+    // inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("list"), gensym("bound"));
+    // floatinlet_new(&x->x_obj, &x->step);
 
     // initialize outlets
-    x->f_out = outlet_new(&x->x_obj, &s_float);
-    x->b_out = outlet_new(&x->x_obj, &s_bang);
+    x->out = outlet_new(&x->x_obj, &s_float);
+    // x->b_out = outlet_new(&x->x_obj, &s_bang);
 
     return (void *)x;
 }
