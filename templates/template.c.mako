@@ -37,6 +37,7 @@ typedef struct _${e.name} {
 
     /* outlets */
     t_outlet *out;
+    /* TODO: additional outlets */
 } t_${e.name};
 
 
@@ -69,7 +70,7 @@ void ${e.name}_${method.name}(${method.args})
  * ---------------------------------------------------------------------------
  */
 
-void *${e.name}_new(t_symbol *s, int argc, t_atom *argv)
+void *${e.name}_new(${e.class_new_args})
 {
     t_${e.name} *x = (t_${e.name} *)pd_new(${e.name}_class);
 
@@ -104,7 +105,8 @@ void ${e.name}_setup(void)
 {
     ${e.name}_class = class_new(gensym("${e.name}"),
                             (t_newmethod)${e.name}_new,
-                            0, sizeof(t_${e.name}),
+                            0, // destructor
+                            sizeof(t_${e.name}),
                             CLASS_DEFAULT,
                             A_GIMME,
                             0);

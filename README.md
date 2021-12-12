@@ -10,8 +10,12 @@ Has two intended purposes:
 
 ## TODO
 
+- [ ] params: should be either 'anything' or alternatives.
+- [ ] generate setup class
+- [ ] create/generate inlets
+- [ ] create/generate outlets
+- [ ] populate variables (switch statement)
 - [ ] fixed inconsistencies in `external.yml`, especiall `arg` vs `param` configuration
-- [ ] inlet and outlet generation in code
 - [ ] rulecheck: `anything` method vs. others (especially list), can be redundant.
 - [ ] generate pd help code
 - [ ] generate pd project

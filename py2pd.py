@@ -124,14 +124,11 @@ class Param(Object):
         super().__init__(parent, **kwargs)
         self.name = self.ns.name
         self.initial = self.ns.initial
-
-    # @property
-    # def name(self):
-    #     return self.ns.name
+        self.type = self.ns.type
 
     @property
     def pd_type(self):
-        return self.c_types[self.ns.type]
+        return self.c_types[self.type]
 
     @property
     def struct_declaration(self):
@@ -173,6 +170,22 @@ class External:
     @property
     def message_methods(self):
         return [MessagedMethod(self, **m) for m in self.ns.message_methods]
+
+    @property
+    def class_new_args(self):
+        if len(self.args) == 0:
+            return 'void'
+        elif 0 < len(self.args) <= 6:
+            types = []
+            for i, t in enumerate(self.args):
+                types.append(self.func_type_args[t.type]+str(i))
+            type_str = ', '.join(types)
+            return type_str
+        elif self.params == 'anything' or len(self.args) > 6:
+            return 't_symbol *s, int argc, t_atom *argv'
+        else:
+            raise Exception('cannot populate class_new_args')
+
 
 def render(external=None, template='template.c.mako'):
     if not external:
