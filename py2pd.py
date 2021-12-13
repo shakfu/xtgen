@@ -37,12 +37,13 @@ class Object:
         self.parent = parent
         self.ns = SimpleNamespace(**kwargs)
 
-class TypedMethod(Object):
+class TypeMethod(Object):
     valid_types = ['bang', 'float', 'int', 'symbol', 'pointer', 'list', 'anything']
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self.type = self.ns.type
+        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
         assert (self.type in self.valid_types)
 
     @property
@@ -74,6 +75,7 @@ class MessagedMethod(Object):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self.name = self.ns.name
+        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
         self.params = self.ns.params
 
     @property
@@ -164,8 +166,8 @@ class External:
         return [Param(self, **p) for p in self.ns.params if p['arg']]
 
     @property
-    def typed_methods(self):
-        return [TypedMethod(self, **m) for m in self.ns.type_methods]
+    def type_methods(self):
+        return [TypeMethod(self, **m) for m in self.ns.type_methods]
 
     @property
     def message_methods(self):
@@ -189,7 +191,7 @@ class External:
 
 def render(external=None, template='template.c.mako'):
     if not external:
-        with open('external.yml') as f:
+        with open('counter.yml') as f:
             yml = yaml.safe_load(f.read())
             ext_yml = yml['externals'][0]
 

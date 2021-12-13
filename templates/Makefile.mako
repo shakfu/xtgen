@@ -1,10 +1,12 @@
-# Makefile for mylib
+# Makefile for ${e.name}
 
-lib.name = mylib
+lib.name = ${e.name}
 
-class.sources = myclass1.c myclass2.c
+class.sources = ${e.name}.c myclass2.c
 
-datafiles = myclass1-help.pd myclass2-help.pd README.txt LICENSE.txt
+datafiles = ${e.name}-help.pd README.txt LICENSE.txt
 
-include Makefile.pdlibbuilder
+PDLIBBUILDER_DIR=pd-lib-builder
+include $(PDLIBBUILDER_DIR)/Makefile.pdlibbuilder
+
  

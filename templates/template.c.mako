@@ -47,7 +47,7 @@ typedef struct _${e.name} {
  */
 
 // typed-methods
-% for method in e.typed_methods:
+% for method in e.type_methods:
 void ${e.name}_${method.type}(${method.args})
 {
     post("${method.type} body");
@@ -59,6 +59,9 @@ void ${e.name}_${method.type}(${method.args})
 % for method in e.message_methods:
 void ${e.name}_${method.name}(${method.args})
 {
+    % if method.doc:
+    // ${method.doc}
+    % endif
     post("${method.name} body");
 }
 
@@ -112,7 +115,7 @@ void ${e.name}_setup(void)
                             0);
 
     // typed methods
-    %for m in e.typed_methods:
+    %for m in e.type_methods:
     ${m.class_addmethod};
 
     % endfor
