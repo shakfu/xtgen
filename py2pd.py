@@ -37,6 +37,9 @@ class Object:
         self.parent = parent
         self.ns = SimpleNamespace(**kwargs)
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: '{self.name}'>"
+
 class TypeMethod(Object):
     valid_types = ['bang', 'float', 'int', 'symbol', 'pointer', 'list', 'anything']
 
@@ -45,6 +48,10 @@ class TypeMethod(Object):
         self.type = self.ns.type
         self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
         assert (self.type in self.valid_types)
+
+    @property
+    def name(self):
+        return self.type
 
     @property
     def args(self):
@@ -156,6 +163,7 @@ class External:
         self.klass = f"{self.name}_class"
         self.meta = self.ns.meta
         self.help = self.ns.help
+        self.alias = self.ns.alias if hasattr(self.ns, 'alias') else None
 
     @property
     def parameters(self):
@@ -188,6 +196,29 @@ class External:
         else:
             raise Exception('cannot populate class_new_args')
 
+    @property
+    def class_type_signature(self):
+        suffix = ", 0"
+        if len(self.args) == 0:
+            return suffix
+        elif 0 < len(self.args) <= 6:
+            types = [self.mapping[i.type] for i in self.args]
+            return ', '.join(types) + suffix
+        else:
+            return "A_GIMME" + suffix
+
+    @property
+    def class_addcreator(self):
+        return f'class_addcreator((t_newmethod){self.name}_new, gensym("{self.alias}"), {self.class_type_signature})'
+        # prefix = f'class_addcreator((t_newmethod){self.name}_new, gensym("{self.alias}")'
+        # if len(self.args) == 0:
+        #     return f"{prefix}, 0)"
+        # elif 0 < len(self.args) <= 6:
+        #     types = [self.mapping[i.type] for i in self.args]
+        #     type_str = ', '.join(types)
+        #     return f"{prefix}, {type_str}, 0)"
+        # else:
+        #     return f"{prefix}, A_GIMME, 0)" 
 
 def render(external=None, template='template.c.mako'):
     if not external:
@@ -196,7 +227,8 @@ def render(external=None, template='template.c.mako'):
             ext_yml = yml['externals'][0]
 
     templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-    rendered = templ.render(e = External(**ext_yml))
+    external = External(**ext_yml)
+    rendered = templ.render(e = external)
     outfile = ext_yml['name'] + '.c'
     with open(outfile,'w') as f:
         f.write(rendered)
@@ -205,4 +237,13 @@ def render(external=None, template='template.c.mako'):
 
 if __name__ == '__main__':
     render()
+
+    # template='template.c.mako'
+    # with open('counter.yml') as f:
+    #     yml = yaml.safe_load(f.read())
+    #     ext_yml = yml['externals'][0]
+
+    # templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
+    # e = External(**ext_yml)
+
 

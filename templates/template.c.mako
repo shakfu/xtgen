@@ -111,20 +111,22 @@ void ${e.name}_setup(void)
                             0, // destructor
                             sizeof(t_${e.name}),
                             CLASS_DEFAULT,
-                            A_GIMME,
-                            0);
+                            ${e.class_type_signature});
 
     // typed methods
     %for m in e.type_methods:
     ${m.class_addmethod};
-
     % endfor
 
     // message methods
     %for m in e.message_methods:
     ${m.class_addmethod};
-
     % endfor
+
+    % if e.alias:
+    // set the alias to external
+    ${e.class_addcreator};
+    % endif
 
     // set name of default help file
     class_sethelpsymbol(${e.name}_class, gensym("${e.help}"));
