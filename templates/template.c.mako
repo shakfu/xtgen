@@ -31,7 +31,7 @@ typedef struct _${e.name} {
     t_object x_obj;
 
     /* parameters */
-    % for p in e.parameters:
+    % for p in e.params:
     ${p.struct_declaration};
     % endfor
 
@@ -78,7 +78,7 @@ void *${e.name}_new(${e.class_new_args})
     t_${e.name} *x = (t_${e.name} *)pd_new(${e.name}_class);
 
     // initialize variables
-    % for p in e.parameters:
+    % for p in e.params:
     x->${p.name} = ${p.initial};
     % endfor
 

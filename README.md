@@ -10,10 +10,9 @@ Has two intended purposes:
 
 ## TODO
 
-- [ ] params: should be either 'anything' or alternatives.
-- [ ] generate setup class
 - [ ] create/generate inlets
 - [ ] create/generate outlets
+- [ ] params: should be either 'anything' or alternatives.
 - [ ] populate variables (switch statement)
 - [ ] fixed inconsistencies in `external.yml`, especiall `arg` vs `param` configuration
 - [ ] rulecheck: `anything` method vs. others (especially list), can be redundant.

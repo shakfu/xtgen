@@ -22,6 +22,10 @@ from mako.template import Template
 TEMPLATE_DIR = os.path.join(os.getcwd(), 'templates')
 
 
+c_type = lambda s: f't_{s}'
+lookup_address = lambda s: f'&s_{s}'
+lookup_routine = lambda s: f'gensym("{s}")'
+
 def create_project(path):
     if os.path.exists(path):
         raise Exception(f'{path} already exists')
@@ -39,6 +43,33 @@ class Object:
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
+
+
+class Type:
+    TYPES = ['bang', 'float', 'symbol', 'pointer', 'list', 'signal']
+
+    def __init__(self, name):
+        assert name in self.TYPES
+        self.name = name
+
+    def __str__(self):
+        return self.name}
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: '{self.name}'>"
+
+    @property
+    def c_type(self):
+        return f't_{self.name}'
+
+    @property
+    def lookup_address(self):
+        return f'&s_{self.name}'
+
+    @property
+    def lookup_routine(self):
+        return f'gensym("{self.name}")'
+
 
 class TypeMethod(Object):
     valid_types = ['bang', 'float', 'int', 'symbol', 'pointer', 'list', 'anything']
@@ -125,7 +156,7 @@ class Param(Object):
         'float': 't_float',
         'symbol': 't_symbol',
         'int': 't_int',
-        'signal': 't_signale',
+        'signal': 't_signal',
         'sample': 't_sample',
     }
 
@@ -134,6 +165,8 @@ class Param(Object):
         self.name = self.ns.name
         self.initial = self.ns.initial
         self.type = self.ns.type
+        self.is_arg = self.ns.arg
+        self.has_inlet = self.ns.inlet
 
     @property
     def pd_type(self):
@@ -142,6 +175,23 @@ class Param(Object):
     @property
     def struct_declaration(self):
         return f"{self.pd_type} {self.name}"
+
+
+# class Inlet(Object):
+#     types = {
+#         'bang': '&s_bang',
+#         'float': '&s_float',
+#         'symbol': '&s_symbol',
+#         'pointer': '&s_pointer',
+#         'list': '&s_list',
+#         'signal': '&s_signal'
+#     }
+#     def __init__(self, parent, **kwargs):
+#         super().__init__(parent, **kwargs)
+#         self.type = self.ns.type
+
+
+
 
 class External:
     mapping = {
@@ -166,12 +216,19 @@ class External:
         self.alias = self.ns.alias if hasattr(self.ns, 'alias') else None
 
     @property
-    def parameters(self):
+    def params(self):
         return [Param(self, **p) for p in self.ns.params]
 
     @property
     def args(self):
-        return [Param(self, **p) for p in self.ns.params if p['arg']]
+        return [p for p in self.params if p.is_arg]
+
+    @property
+    def inlets(self):
+        return [p for p in self.params if p.has_inlet]
+
+    @property
+    def outlets(self): pass
 
     @property
     def type_methods(self):
@@ -180,6 +237,13 @@ class External:
     @property
     def message_methods(self):
         return [MessagedMethod(self, **m) for m in self.ns.message_methods]
+
+    # @property
+    # def type_inlets(self): pass
+
+    # @property
+    # def message_inlets(self): pass
+
 
     @property
     def class_new_args(self):
@@ -209,16 +273,9 @@ class External:
 
     @property
     def class_addcreator(self):
-        return f'class_addcreator((t_newmethod){self.name}_new, gensym("{self.alias}"), {self.class_type_signature})'
-        # prefix = f'class_addcreator((t_newmethod){self.name}_new, gensym("{self.alias}")'
-        # if len(self.args) == 0:
-        #     return f"{prefix}, 0)"
-        # elif 0 < len(self.args) <= 6:
-        #     types = [self.mapping[i.type] for i in self.args]
-        #     type_str = ', '.join(types)
-        #     return f"{prefix}, {type_str}, 0)"
-        # else:
-        #     return f"{prefix}, A_GIMME, 0)" 
+        return (f'class_addcreator((t_newmethod)'
+                f'{self.name}_new, gensym("{self.alias}"), '
+                f'{self.class_type_signature})')
 
 def render(external=None, template='template.c.mako'):
     if not external:
@@ -236,14 +293,15 @@ def render(external=None, template='template.c.mako'):
 
 
 if __name__ == '__main__':
-    render()
+    if 0:
+        render()
+    else:
+        template='template.c.mako'
+        with open('counter.yml') as f:
+            yml = yaml.safe_load(f.read())
+            ext_yml = yml['externals'][0]
 
-    # template='template.c.mako'
-    # with open('counter.yml') as f:
-    #     yml = yaml.safe_load(f.read())
-    #     ext_yml = yml['externals'][0]
-
-    # templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-    # e = External(**ext_yml)
+        templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
+        e = External(**ext_yml)
 
 
