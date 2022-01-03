@@ -9,6 +9,11 @@ Has two intended purposes:
 - [ ] generate skeleton puredata external code
 - [ ] generate related puredata patch code
 
+
+Type:
+    ScalarType (float, int, symbol)
+    CompoundType (list, anything)
+
 """
 
 import sys
@@ -44,31 +49,6 @@ class Object:
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
 
-
-class Type:
-    TYPES = ['bang', 'float', 'symbol', 'pointer', 'list', 'signal']
-
-    def __init__(self, name):
-        assert name in self.TYPES
-        self.name = name
-
-    def __str__(self):
-        return self.name}
-
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: '{self.name}'>"
-
-    @property
-    def c_type(self):
-        return f't_{self.name}'
-
-    @property
-    def lookup_address(self):
-        return f'&s_{self.name}'
-
-    @property
-    def lookup_routine(self):
-        return f'gensym("{self.name}")'
 
 
 class TypeMethod(Object):
@@ -135,7 +115,9 @@ class MessagedMethod(Object):
 
     @property
     def class_addmethod(self):
-        prefix = f'class_addmethod({self.parent.name}_class, (t_method){self.parent.name}_{self.name}, gensym("{self.name}")'
+        prefix = (f'class_addmethod({self.parent.name}_class, '
+                  f'(t_method){self.parent.name}_{self.name}, '
+                  f'gensym("{self.name}")')
 
         if len(self.params) == 0:
             return f'{prefix}, 0)'
@@ -148,6 +130,27 @@ class MessagedMethod(Object):
                     types.append(self.parent.mapping[t])
                 type_str = ', '.join(types)
                 return f'{prefix}, {type_str}, 0)'
+
+
+# class Inlet(Object):
+#     types = {
+#         'bang': '&s_bang',
+#         'float': '&s_float',
+#         'symbol': '&s_symbol',
+#         'pointer': '&s_pointer',
+#         'list': '&s_list',
+#         'signal': '&s_signal'
+#     }
+#     def __init__(self, parent, **kwargs):
+#         super().__init__(parent, **kwargs)
+#         # self.type = self.ns.type
+
+#     @property
+#     def typed_inlet_new(self):
+#         assert 'bang' != self.name # doesn't exist for 'bang'
+#         if self.name == 'pointer':
+#             return 't_inlet *pointerinlet_new(t_object *owner, t_gpointer *gp)'
+
 
 
 class Param(Object):
@@ -168,6 +171,9 @@ class Param(Object):
         self.is_arg = self.ns.arg
         self.has_inlet = self.ns.inlet
 
+    # def as_inlet(self):
+    #     return Inlet(self.parent, vars(self.ns))
+
     @property
     def pd_type(self):
         return self.c_types[self.type]
@@ -177,19 +183,13 @@ class Param(Object):
         return f"{self.pd_type} {self.name}"
 
 
-# class Inlet(Object):
-#     types = {
-#         'bang': '&s_bang',
-#         'float': '&s_float',
-#         'symbol': '&s_symbol',
-#         'pointer': '&s_pointer',
-#         'list': '&s_list',
-#         'signal': '&s_signal'
-#     }
-#     def __init__(self, parent, **kwargs):
-#         super().__init__(parent, **kwargs)
-#         self.type = self.ns.type
 
+
+class Outlet(Object):
+   def __init__(self, parent, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.name = self.ns.name
+        self.type = self.ns.type
 
 
 
@@ -215,6 +215,9 @@ class External:
         self.help = self.ns.help
         self.alias = self.ns.alias if hasattr(self.ns, 'alias') else None
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: '{self.name}'>"
+
     @property
     def params(self):
         return [Param(self, **p) for p in self.ns.params]
@@ -228,7 +231,8 @@ class External:
         return [p for p in self.params if p.has_inlet]
 
     @property
-    def outlets(self): pass
+    def outlets(self):
+        return [Outlet(self, **o) for o in self.ns.outlets]
 
     @property
     def type_methods(self):
@@ -237,13 +241,6 @@ class External:
     @property
     def message_methods(self):
         return [MessagedMethod(self, **m) for m in self.ns.message_methods]
-
-    # @property
-    # def type_inlets(self): pass
-
-    # @property
-    # def message_inlets(self): pass
-
 
     @property
     def class_new_args(self):
@@ -293,7 +290,7 @@ def render(external=None, template='template.c.mako'):
 
 
 if __name__ == '__main__':
-    if 0:
+    if 1:
         render()
     else:
         template='template.c.mako'

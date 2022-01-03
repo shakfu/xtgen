@@ -36,8 +36,9 @@ typedef struct _${e.name} {
     % endfor
 
     /* outlets */
-    t_outlet *out;
-    /* TODO: additional outlets */
+    % for o in e.outlets:
+    t_outlet *out_${o.name};
+    % endfor
 } t_${e.name};
 
 
@@ -89,11 +90,14 @@ void *${e.name}_new(${e.class_new_args})
 
     // create inlets
     // inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("list"), gensym("bound"));
-    // floatinlet_new(&x->x_obj, &x->step);
+    % for i in e.inlets:
+    ${i.type}inlet_new(&x->x_obj, &x->${i.name});
+    % endfor
 
     // initialize outlets
-    x->out = outlet_new(&x->x_obj, &s_float);
-    // x->b_out = outlet_new(&x->x_obj, &s_bang);
+    % for o in e.outlets:
+    x->out_${o.name} = outlet_new(&x->x_obj, &s_${o.type});
+    % endfor
 
     return (void *)x;
 }

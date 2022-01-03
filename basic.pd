@@ -1,0 +1,9 @@
+#N canvas 394 140 445 318 12;
+#N canvas 401 372 450 300 inside 1;
+#X obj 164 158 outlet;
+#X msg 164 61 bang;
+#X msg 164 105 inside-message;
+#X connect 1 0 2 0;
+#X connect 2 0 0 0;
+#X restore 163 135 pd inside;
+#X msg 101 52 outside-msg;
