@@ -158,6 +158,8 @@ void counter_setup(void)
     class_addmethod(counter_class, (t_method)counter_bound, gensym("bound"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(counter_class, (t_method)counter_step, gensym("step"), A_DEFFLOAT, 0);
 
+    // set the alias to external
+    class_addcreator((t_newmethod)counter_new, gensym("cntr"), A_DEFFLOAT, A_DEFFLOAT, A_DEFFLOAT, 0);
 
     // set name of default help file
     class_sethelpsymbol(counter_class, gensym("help-counter"));

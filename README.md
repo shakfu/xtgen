@@ -1,11 +1,11 @@
-# py2pd
+# xtgen
 
-A tool to generate skeleton puredata external files.
+A tool to generate skeleton puredata and Max/MSP external files.
 
 Has two intended purposes:
 
-- [ ] generate skeleton puredata external code
-- [ ] generate related puredata patch code
+- [ ] generate skeleton puredata and Max/MSP external code
+- [ ] generate related puredata and Max/MSP patch code
 
 
 ## TODO

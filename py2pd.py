@@ -1,304 +1,158 @@
-#!/usr/bin/env python3
+"""pd.py
 
-""" py2pd.py
+A pure python to pd transpiler.
 
-A tool to generate skeleton puredata external files.
+For examples:
 
-Has two intended purposes:
+>>> p = Patch('demo.pd')
+>>> osc = p.add_obj('osc~ 440')
+>>> mult = p.add_obj('~*')
+>>> dac = p.add_obj('dac~')
+>>> p.link(osc, mult)
+>>> p.link(mult, dac)
+>>> p.save()
 
-- [ ] generate skeleton puredata external code
-- [ ] generate related puredata patch code
+OR
 
-
-Type:
-    ScalarType (float, int, symbol)
-    CompoundType (list, anything)
+>>> p = Patch('demo.pd')
+>>> osc = p.add('osc~ 440')
+>>> mult = p.add('~*')
+>>> dac = p.add('dac~')
+>>> p.link(osc, mult)
+>>> p.link(mult, dac)
+>>> p.save()
 
 """
 
-import sys
-import os
-from pathlib import Path
-from types import SimpleNamespace
-import yaml
-
-from mako.template import Template
-
-TEMPLATE_DIR = os.path.join(os.getcwd(), 'templates')
-
-
-c_type = lambda s: f't_{s}'
-lookup_address = lambda s: f'&s_{s}'
-lookup_routine = lambda s: f'gensym("{s}")'
-
-def create_project(path):
-    if os.path.exists(path):
-        raise Exception(f'{path} already exists')
-    else:
-        os.mkdir(path)
-        os.chdir(path)
-        os.system('git init')
-        os.system('git submodule add https://github.com/pure-data/pd-lib-builder.git')
-
-
-class Object:
-    def __init__(self, parent, **kwargs):
-        self.parent = parent
-        self.ns = SimpleNamespace(**kwargs)
-
+class PdObject:
     def __repr__(self):
-        return f"<{self.__class__.__name__}: '{self.name}'>"
+        return f"<{self.__class__.__name__}: '{self}'>"
+
+    def __str__(self):
+        return " ".join(str(i) for i in self.property_list)
 
 
 
-class TypeMethod(Object):
-    valid_types = ['bang', 'float', 'int', 'symbol', 'pointer', 'list', 'anything']
+class Canvas(PdObject):
+    """Top-level container object in Puredata.
 
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.type = self.ns.type
-        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
-        assert (self.type in self.valid_types)
+    #N canvas <x_pos> <y_pos> <x_size> <y_size> <font_size>
+    #N canvas 394 140 445 318 12;
+    """
 
-    @property
-    def name(self):
-        return self.type
+    DEFAULT_X_POS = 394
+    DEFAULT_Y_POS = 140
+    DEFAULT_X_SIZE = 445
+    DEFAULT_Y_SIZE = 318
+    DEFAULT_FONT_SIZE = 12
 
-    @property
-    def args(self):
-        if self.type == 'bang':
-            return f'{self.parent.type} *x'
-
-        elif self.type in ['float', 'int']:
-            return f'{self.parent.type} *x, t_floatarg f'
-
-        elif self.type == 'symbol':
-            return f'{self.parent.type} *x, t_symbol *s'
-
-        elif self.type == 'pointer':
-            return f'{self.parent.type} *x, t_gpointer *pt'
-
-        elif self.type in ['list', 'anything']:
-            return f'{self.parent.type} *x, t_symbol *s, int argc, t_atom *argv'
-
-        else:
-            raise Exception(f"argument '{self.type}' not implemented")
-
-    @property
-    def class_addmethod(self):
-        return f'class_add{self.type}({self.parent.klass}, {self.parent.name}_{self.type})'
-
-
-class MessagedMethod(Object):
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.name = self.ns.name
-        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
-        self.params = self.ns.params
-
-    @property
-    def args(self):
-        prefix = f'{self.parent.type} *x'
-
-        if len(self.params) == 0:
-            return prefix
-        else:
-            if (self.params == ['list']) or (len(self.params) > 6):
-                return f'{prefix}, t_symbol *s, int argc, t_atom *argv'
-            else:
-                types = []
-                for i, t in enumerate(self.params):
-                    types.append(self.parent.func_type_args[t]+str(i))
-                type_str = ', '.join(types)
-                return f'{prefix}, {type_str}'
+    def __init__(self, x_pos=None, y_pos=None, x_size=None, y_size=None, font_size=None):
+        self.chunk_type = "#N"
+        self.type = "canvas"
+        self.x_pos = x_pos if x_pos else self.DEFAULT_X_POS
+        self.y_pos = y_pos if y_pos else self.DEFAULT_Y_POS
+        self.x_size = x_size if x_size else self.DEFAULT_X_SIZE
+        self.y_size = x_size if y_size else self.DEFAULT_Y_SIZE
+        self.font_size = font_size if font_size else self.DEFAULT_FONT_SIZE
 
 
     @property
-    def class_addmethod(self):
-        prefix = (f'class_addmethod({self.parent.name}_class, '
-                  f'(t_method){self.parent.name}_{self.name}, '
-                  f'gensym("{self.name}")')
-
-        if len(self.params) == 0:
-            return f'{prefix}, 0)'
-        else:
-            if (self.params == ['list']) or (len(self.params) > 6):
-                return f'{prefix}, A_GIMME, 0)'
-            else:
-                types = []
-                for t in self.params:
-                    types.append(self.parent.mapping[t])
-                type_str = ', '.join(types)
-                return f'{prefix}, {type_str}, 0)'
+    def property_list(self):
+        return [
+            self.chunk_type,
+            self.type,
+            self.x_pos,
+            self.y_pos,
+            self.x_size,
+            self.y_size,
+            self.font_size,
+        ]
 
 
-# class Inlet(Object):
-#     types = {
-#         'bang': '&s_bang',
-#         'float': '&s_float',
-#         'symbol': '&s_symbol',
-#         'pointer': '&s_pointer',
-#         'list': '&s_list',
-#         'signal': '&s_signal'
-#     }
-#     def __init__(self, parent, **kwargs):
-#         super().__init__(parent, **kwargs)
-#         # self.type = self.ns.type
+class Subcanvas(Canvas):
+    """child container object in Puredata.
 
-#     @property
-#     def typed_inlet_new(self):
-#         assert 'bang' != self.name # doesn't exist for 'bang'
-#         if self.name == 'pointer':
-#             return 't_inlet *pointerinlet_new(t_object *owner, t_gpointer *gp)'
+    #N canvas <x_pos> <y_pos> <x_size> <y_size> <name> <open_on_load>
+    #N canvas 401 372 450 300 inside 1
+    """
 
+    DEFAULT_OPEN_ON_LOAD = 1
 
-
-class Param(Object):
-    c_types = {
-        'atom': 't_atom',
-        'float': 't_float',
-        'symbol': 't_symbol',
-        'int': 't_int',
-        'signal': 't_signal',
-        'sample': 't_sample',
-    }
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.name = self.ns.name
-        self.initial = self.ns.initial
-        self.type = self.ns.type
-        self.is_arg = self.ns.arg
-        self.has_inlet = self.ns.inlet
-
-    # def as_inlet(self):
-    #     return Inlet(self.parent, vars(self.ns))
+    def __init__(self, name='', x_pos=None, y_pos=None, x_size=None, y_size=None, font_size=None, open_on_load=None):
+        super().__init__(x_pos, y_pos, x_size, y_size, font_size)
+        self.name = name
+        self.open_on_load = open_on_load if open_on_load else self.DEFAULT_OPEN_ON_LOAD
 
     @property
-    def pd_type(self):
-        return self.c_types[self.type]
+    def property_list(self):
+        return [
+            self.chunk_type,
+            self.type,
+            self.x_pos,
+            self.y_pos,
+            self.x_size,
+            self.y_size,
+            self.name,
+            self.open_on_load,
+        ]
+
+
+class Msg(PdObject):
+    """pd message object
+
+    #X msg <x_pos> <y_pos> <p1> <p2> <p3> <...>
+    """
+
+    DEFAULT_X_POS = 20
+    DEFAULT_Y_POS = 20
+
+    def __init__(self, content, x_pos=None, y_pos=None):
+        self.chunk_type = "#X"
+        self.type = "msg"
+        self.content = content
+        self.x_pos = x_pos if x_pos else self.DEFAULT_X_POS
+        self.y_pos = y_pos if y_pos else self.DEFAULT_Y_POS
+
 
     @property
-    def struct_declaration(self):
-        return f"{self.pd_type} {self.name}"
+    def property_list(self):
+        return [
+            self.chunk_type,
+            self.type,
+            self.x_pos,
+            self.y_pos,
+        ] + self.content.split()
 
 
+class Obj(PdObject):
+    """pd message object
 
+    #X obj <x_pos> <y_pos> <name> <p1> <p2> <p3> <...>
+    """
 
-class Outlet(Object):
-   def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        self.name = self.ns.name
-        self.type = self.ns.type
+    DEFAULT_X_POS = 20
+    DEFAULT_Y_POS = 20
 
+    def __init__(self, content, x_pos=None, y_pos=None):
+        self.chunk_type = "#X"
+        self.type = "obj"
+        self.name, *self.params = content.split()
+        self.x_pos = x_pos if x_pos else self.DEFAULT_X_POS
+        self.y_pos = y_pos if y_pos else self.DEFAULT_Y_POS
 
-
-class External:
-    mapping = {
-        'float': 'A_DEFFLOAT',
-        'symbol': 'A_DEFSYMBOL',
-        'anything': 'A_GIMME',
-    }
-
-    func_type_args = {
-        'float': 't_floatarg f',
-        'symbol': 't_symbol *s',
-        'anything': 't_symbol *s, int argc, t_atom *argv',
-    }
-
-    def __init__(self, **kwargs):
-        self.ns = SimpleNamespace(**kwargs)
-        self.name = self.ns.name
-        self.type = f"t_{self.name}"
-        self.klass = f"{self.name}_class"
-        self.meta = self.ns.meta
-        self.help = self.ns.help
-        self.alias = self.ns.alias if hasattr(self.ns, 'alias') else None
-
-    def __repr__(self):
-        return f"<{self.__class__.__name__}: '{self.name}'>"
 
     @property
-    def params(self):
-        return [Param(self, **p) for p in self.ns.params]
-
-    @property
-    def args(self):
-        return [p for p in self.params if p.is_arg]
-
-    @property
-    def inlets(self):
-        return [p for p in self.params if p.has_inlet]
-
-    @property
-    def outlets(self):
-        return [Outlet(self, **o) for o in self.ns.outlets]
-
-    @property
-    def type_methods(self):
-        return [TypeMethod(self, **m) for m in self.ns.type_methods]
-
-    @property
-    def message_methods(self):
-        return [MessagedMethod(self, **m) for m in self.ns.message_methods]
-
-    @property
-    def class_new_args(self):
-        if len(self.args) == 0:
-            return 'void'
-        elif 0 < len(self.args) <= 6:
-            types = []
-            for i, t in enumerate(self.args):
-                types.append(self.func_type_args[t.type]+str(i))
-            type_str = ', '.join(types)
-            return type_str
-        elif self.params == 'anything' or len(self.args) > 6:
-            return 't_symbol *s, int argc, t_atom *argv'
-        else:
-            raise Exception('cannot populate class_new_args')
-
-    @property
-    def class_type_signature(self):
-        suffix = ", 0"
-        if len(self.args) == 0:
-            return suffix
-        elif 0 < len(self.args) <= 6:
-            types = [self.mapping[i.type] for i in self.args]
-            return ', '.join(types) + suffix
-        else:
-            return "A_GIMME" + suffix
-
-    @property
-    def class_addcreator(self):
-        return (f'class_addcreator((t_newmethod)'
-                f'{self.name}_new, gensym("{self.alias}"), '
-                f'{self.class_type_signature})')
-
-def render(external=None, template='template.c.mako'):
-    if not external:
-        with open('counter.yml') as f:
-            yml = yaml.safe_load(f.read())
-            ext_yml = yml['externals'][0]
-
-    templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-    external = External(**ext_yml)
-    rendered = templ.render(e = external)
-    outfile = ext_yml['name'] + '.c'
-    with open(outfile,'w') as f:
-        f.write(rendered)
-    print(outfile, 'rendered')
+    def property_list(self):
+        return [
+            self.chunk_type,
+            self.type,
+            self.x_pos,
+            self.y_pos,
+            self.name,
+        ] + self.params
 
 
-if __name__ == '__main__':
-    if 1:
-        render()
-    else:
-        template='template.c.mako'
-        with open('counter.yml') as f:
-            yml = yaml.safe_load(f.read())
-            ext_yml = yml['externals'][0]
-
-        templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-        e = External(**ext_yml)
-
-
+c = Canvas()
+s = Subcanvas()
+m = Msg("nice one please")
+o = Obj("osc~ 440")

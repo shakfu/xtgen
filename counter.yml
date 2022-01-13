@@ -1,7 +1,7 @@
 
 externals:
   - name: counter
-    # alias: cntr
+    alias: cntr
     params:
       - {name: step,  type: float, min: 0.0, max: 1.0, initial: 0.5, arg: true, inlet: true}
       - {name: lower, type: float, min: 0.0, max: 0.9, initial: 0.0, arg: true, inlet: false}
