@@ -1,21 +1,10 @@
 #!/usr/bin/env python3
+"""xtgen.py
 
-""" py2pd.py
+A tool to generate skeleton puredata or max external files.
 
-A tool to generate skeleton puredata external files.
-
-Has two intended purposes:
-
-- [ ] generate skeleton puredata external code
-- [ ] generate related puredata patch code
-
-
-Type:
-    ScalarType (float, int, symbol)
-    CompoundType (list, anything)
 
 """
-
 import sys
 import os
 from pathlib import Path
@@ -39,6 +28,71 @@ def create_project(path):
         os.chdir(path)
         os.system('git init')
         os.system('git submodule add https://github.com/pure-data/pd-lib-builder.git')
+
+
+
+class Type:
+    VALID_TYPES = []
+
+    def __init__(self, name):
+        assert name in self.VALID_TYPES
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: '{self.name}'>"
+
+
+class ScalarType(Type):
+    VALID_TYPES = ['bang', 'float', 'symbol', 'pointer', 'signal']
+
+    @property
+    def c_type(self):
+        return f't_{self.name}'
+
+    @property
+    def lookup_address(self):
+        return f'&s_{self.name}'
+
+    @property
+    def lookup_routine(self):
+        return f'gensym("{self.name}")'
+
+    @property
+    def type_method_arg(self):
+        return {
+            'bang' : '',
+            'float': 't_floatarg f',
+            'int': 't_floatarg f',
+            'symbol': 't_symbol *s',
+            'pointer': 't_gpointer *pt',
+        }[self.name]
+
+
+class CompoundType(Type):
+    VALID_TYPES = ['list', 'anything']
+
+    @property
+    def c_type(self):
+        assert self.name != 'anything' # doesn't exist for 'anything'
+        return f't_{self.name}'
+
+    @property
+    def lookup_address(self):
+        return f'&s_{self.name}'
+
+    @property
+    def lookup_routine(self):
+        return f'gensym("{self.name}")'
+
+    @property
+    def type_method_arg(self):
+        return {
+            'list': 't_symbol *s, int argc, t_atom *argv',
+            'anything': 't_symbol *s, int argc, t_atom *argv',
+        }[self.name]
 
 
 class Object:
