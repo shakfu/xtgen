@@ -3,32 +3,51 @@
 
 A tool to generate skeleton puredata or max external files.
 
+Requires the following python packages:
+
+- mako
+- pyyaml
+
+>>> import xtgen
+
+>>> xtgen.PdProject('counter.yml').generate()
+>>> # generates a regular c pd external skeleton
+
+>>> xtgen.PdProject('counter~.yml').generate()
+>>> # generates an audio dsp pd external
+
+>>> xtgen.MaxProject('counter.yml').generate()
+>>> ... (similar as above)
+
 
 """
-import sys
+import argparse
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+
 import yaml
-
 from mako.template import Template
+from mako.lookup import TemplateLookup
 
-TEMPLATE_DIR = os.path.join(os.getcwd(), 'templates')
 
+# ----------------------------------------------------------------------------
+# CONSTANTS
 
-c_type = lambda s: f't_{s}'
-lookup_address = lambda s: f'&s_{s}'
+TEMPLATE_DIR = os.path.join(os.getcwd(), "templates")
+TEMPLATE_LOOKUP = TemplateLookup(directories=[TEMPLATE_DIR])
+
+# ----------------------------------------------------------------------------
+# UTILITY FUNCTIONS
+
+c_type = lambda s: f"t_{s}"
+lookup_address = lambda s: f"&s_{s}"
 lookup_routine = lambda s: f'gensym("{s}")'
 
-def create_project(path):
-    if os.path.exists(path):
-        raise Exception(f'{path} already exists')
-    else:
-        os.mkdir(path)
-        os.chdir(path)
-        os.system('git init')
-        os.system('git submodule add https://github.com/pure-data/pd-lib-builder.git')
 
+# ----------------------------------------------------------------------------
+# TYPE CLASSES
 
 
 class Type:
@@ -46,15 +65,15 @@ class Type:
 
 
 class ScalarType(Type):
-    VALID_TYPES = ['bang', 'float', 'symbol', 'pointer', 'signal']
+    VALID_TYPES = ["bang", "float", "symbol", "pointer", "signal"]
 
     @property
     def c_type(self):
-        return f't_{self.name}'
+        return f"t_{self.name}"
 
     @property
     def lookup_address(self):
-        return f'&s_{self.name}'
+        return f"&s_{self.name}"
 
     @property
     def lookup_routine(self):
@@ -63,25 +82,25 @@ class ScalarType(Type):
     @property
     def type_method_arg(self):
         return {
-            'bang' : '',
-            'float': 't_floatarg f',
-            'int': 't_floatarg f',
-            'symbol': 't_symbol *s',
-            'pointer': 't_gpointer *pt',
+            "bang": "",
+            "float": "t_floatarg f",
+            "int": "t_floatarg f",
+            "symbol": "t_symbol *s",
+            "pointer": "t_gpointer *pt",
         }[self.name]
 
 
 class CompoundType(Type):
-    VALID_TYPES = ['list', 'anything']
+    VALID_TYPES = ["list", "anything"]
 
     @property
     def c_type(self):
-        assert self.name != 'anything' # doesn't exist for 'anything'
-        return f't_{self.name}'
+        assert self.name != "anything"  # doesn't exist for 'anything'
+        return f"t_{self.name}"
 
     @property
     def lookup_address(self):
-        return f'&s_{self.name}'
+        return f"&s_{self.name}"
 
     @property
     def lookup_routine(self):
@@ -90,8 +109,8 @@ class CompoundType(Type):
     @property
     def type_method_arg(self):
         return {
-            'list': 't_symbol *s, int argc, t_atom *argv',
-            'anything': 't_symbol *s, int argc, t_atom *argv',
+            "list": "t_symbol *s, int argc, t_atom *argv",
+            "anything": "t_symbol *s, int argc, t_atom *argv",
         }[self.name]
 
 
@@ -104,15 +123,14 @@ class Object:
         return f"<{self.__class__.__name__}: '{self.name}'>"
 
 
-
 class TypeMethod(Object):
-    valid_types = ['bang', 'float', 'int', 'symbol', 'pointer', 'list', 'anything']
+    valid_types = ["bang", "float", "int", "symbol", "pointer", "list", "anything"]
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self.type = self.ns.type
-        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
-        assert (self.type in self.valid_types)
+        self.doc = self.ns.doc if hasattr(self.ns, "doc") else ""
+        assert self.type in self.valid_types
 
     @property
     def name(self):
@@ -120,70 +138,73 @@ class TypeMethod(Object):
 
     @property
     def args(self):
-        if self.type == 'bang':
-            return f'{self.parent.type} *x'
+        if self.type == "bang":
+            return f"{self.parent.type} *x"
 
-        elif self.type in ['float', 'int']:
-            return f'{self.parent.type} *x, t_floatarg f'
+        elif self.type in ["float", "int"]:
+            return f"{self.parent.type} *x, t_floatarg f"
 
-        elif self.type == 'symbol':
-            return f'{self.parent.type} *x, t_symbol *s'
+        elif self.type == "symbol":
+            return f"{self.parent.type} *x, t_symbol *s"
 
-        elif self.type == 'pointer':
-            return f'{self.parent.type} *x, t_gpointer *pt'
+        elif self.type == "pointer":
+            return f"{self.parent.type} *x, t_gpointer *pt"
 
-        elif self.type in ['list', 'anything']:
-            return f'{self.parent.type} *x, t_symbol *s, int argc, t_atom *argv'
+        elif self.type in ["list", "anything"]:
+            return f"{self.parent.type} *x, t_symbol *s, int argc, t_atom *argv"
 
         else:
             raise Exception(f"argument '{self.type}' not implemented")
 
     @property
     def class_addmethod(self):
-        return f'class_add{self.type}({self.parent.klass}, {self.parent.name}_{self.type})'
+        return (
+            f"class_add{self.type}({self.parent.klass}, {self.parent.name}_{self.type})"
+        )
 
 
 class MessagedMethod(Object):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self.name = self.ns.name
-        self.doc = self.ns.doc if hasattr(self.ns, 'doc') else ''
+        self.doc = self.ns.doc if hasattr(self.ns, "doc") else ""
         self.params = self.ns.params
 
     @property
     def args(self):
-        prefix = f'{self.parent.type} *x'
+        prefix = f"{self.parent.type} *x"
 
         if len(self.params) == 0:
             return prefix
         else:
-            if (self.params == ['list']) or (len(self.params) > 6):
-                return f'{prefix}, t_symbol *s, int argc, t_atom *argv'
+            if (self.params == ["list"]) or (len(self.params) > 6):
+                return f"{prefix}, t_symbol *s, int argc, t_atom *argv"
             else:
                 types = []
                 for i, t in enumerate(self.params):
-                    types.append(self.parent.func_type_args[t]+str(i))
-                type_str = ', '.join(types)
-                return f'{prefix}, {type_str}'
-
+                    types.append(self.parent.func_type_args[t] + str(i))
+                type_str = ", ".join(types)
+                return f"{prefix}, {type_str}"
 
     @property
     def class_addmethod(self):
-        prefix = (f'class_addmethod({self.parent.name}_class, '
-                  f'(t_method){self.parent.name}_{self.name}, '
-                  f'gensym("{self.name}")')
+        prefix = (
+            f"class_addmethod({self.parent.name}_class, "
+            f"(t_method){self.parent.name}_{self.name}, "
+            f'gensym("{self.name}")'
+        )
 
         if len(self.params) == 0:
-            return f'{prefix}, 0)'
+            return f"{prefix}, 0)"
         else:
-            if (self.params == ['list']) or (len(self.params) > 6):
-                return f'{prefix}, A_GIMME, 0)'
+            if (self.params == ["list"]) or (len(self.params) > 6):
+                return f"{prefix}, A_GIMME, 0)"
             else:
                 types = []
                 for t in self.params:
                     types.append(self.parent.mapping[t])
-                type_str = ', '.join(types)
-                return f'{prefix}, {type_str}, 0)'
+                type_str = ", ".join(types)
+                return f"{prefix}, {type_str}, 0)"
 
 
 # class Inlet(Object):
@@ -206,15 +227,14 @@ class MessagedMethod(Object):
 #             return 't_inlet *pointerinlet_new(t_object *owner, t_gpointer *gp)'
 
 
-
 class Param(Object):
     c_types = {
-        'atom': 't_atom',
-        'float': 't_float',
-        'symbol': 't_symbol',
-        'int': 't_int',
-        'signal': 't_signal',
-        'sample': 't_sample',
+        "atom": "t_atom",
+        "float": "t_float",
+        "symbol": "t_symbol",
+        "int": "t_int",
+        "signal": "t_signal",
+        "sample": "t_sample",
     }
 
     def __init__(self, parent, **kwargs):
@@ -237,27 +257,24 @@ class Param(Object):
         return f"{self.pd_type} {self.name}"
 
 
-
-
 class Outlet(Object):
-   def __init__(self, parent, **kwargs):
+    def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         self.name = self.ns.name
         self.type = self.ns.type
 
 
-
 class External:
     mapping = {
-        'float': 'A_DEFFLOAT',
-        'symbol': 'A_DEFSYMBOL',
-        'anything': 'A_GIMME',
+        "float": "A_DEFFLOAT",
+        "symbol": "A_DEFSYMBOL",
+        "anything": "A_GIMME",
     }
 
     func_type_args = {
-        'float': 't_floatarg f',
-        'symbol': 't_symbol *s',
-        'anything': 't_symbol *s, int argc, t_atom *argv',
+        "float": "t_floatarg f",
+        "symbol": "t_symbol *s",
+        "anything": "t_symbol *s, int argc, t_atom *argv",
     }
 
     def __init__(self, **kwargs):
@@ -267,7 +284,7 @@ class External:
         self.klass = f"{self.name}_class"
         self.meta = self.ns.meta
         self.help = self.ns.help
-        self.alias = self.ns.alias if hasattr(self.ns, 'alias') else None
+        self.alias = self.ns.alias if hasattr(self.ns, "alias") else None
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
@@ -299,17 +316,17 @@ class External:
     @property
     def class_new_args(self):
         if len(self.args) == 0:
-            return 'void'
+            return "void"
         elif 0 < len(self.args) <= 6:
             types = []
             for i, t in enumerate(self.args):
-                types.append(self.func_type_args[t.type]+str(i))
-            type_str = ', '.join(types)
+                types.append(self.func_type_args[t.type] + str(i))
+            type_str = ", ".join(types)
             return type_str
-        elif self.params == 'anything' or len(self.args) > 6:
-            return 't_symbol *s, int argc, t_atom *argv'
+        elif self.params == "anything" or len(self.args) > 6:
+            return "t_symbol *s, int argc, t_atom *argv"
         else:
-            raise Exception('cannot populate class_new_args')
+            raise Exception("cannot populate class_new_args")
 
     @property
     def class_type_signature(self):
@@ -318,41 +335,72 @@ class External:
             return suffix
         elif 0 < len(self.args) <= 6:
             types = [self.mapping[i.type] for i in self.args]
-            return ', '.join(types) + suffix
+            return ", ".join(types) + suffix
         else:
             return "A_GIMME" + suffix
 
     @property
     def class_addcreator(self):
-        return (f'class_addcreator((t_newmethod)'
-                f'{self.name}_new, gensym("{self.alias}"), '
-                f'{self.class_type_signature})')
+        return (
+            f"class_addcreator((t_newmethod)"
+            f'{self.name}_new, gensym("{self.alias}"), '
+            f"{self.class_type_signature})"
+        )
 
-def render(external=None, template='pd-external.c.mako'):
-    if not external:
-        with open('counter.yml') as f:
+
+# ----------------------------------------------------------------------------
+# MAIN CLASS
+
+
+class PdProject:
+    """main class to manage external projects and related files."""
+
+    def __init__(self, spec_yml, target_dir="output"):
+        self.spec_yml = Path(spec_yml)
+        self.fullname = Path(spec_yml).stem
+        self.name = self.fullname.strip("~")
+        self.is_dsp = self.fullname.endswith("~")
+        self.target_dir = Path(target_dir)
+        self.project_path = self.target_dir / self.fullname
+
+    def cmd(self, shell, *args, **kwds):
+        os.system(shell.format(*args, **kwds))
+
+    def generate(self):
+        try:
+            Path("output").mkdir(exist_ok=True)
+            self.project_path.mkdir(exist_ok=True)
+        except OSError:
+            print(f"{self.project_path} already exists")
+            return
+
+        self.cmd(f"cp -rf resources/pd/Makefile.pdlibbuilder {self.project_path}")
+        if self.is_dsp:
+            self.render("pd-dsp-external.c.mako")
+        else:
+            self.render("pd-external.c.mako")
+        self.render("pd-Makefile.mako", "Makefile")
+        self.render("README.md.mako", "README.md")
+
+    def render(self, template, outfile=None):
+        with open(self.spec_yml) as f:
             yml = yaml.safe_load(f.read())
-            ext_yml = yml['externals'][0]
+            ext_yml = yml["externals"][0]
 
-    templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-    external = External(**ext_yml)
-    rendered = templ.render(e = external)
-    outfile = ext_yml['name'] + '.c'
-    with open(outfile,'w') as f:
-        f.write(rendered)
-    print(outfile, 'rendered')
-
-
-if __name__ == '__main__':
-    if 1:
-        render()
-    else:
-        template='pd-external.c.mako'
-        with open('counter.yml') as f:
-            yml = yaml.safe_load(f.read())
-            ext_yml = yml['externals'][0]
-
-        templ = Template(filename=f'{TEMPLATE_DIR}/{template}')
-        e = External(**ext_yml)
+        templ = Template(filename=os.path.join(TEMPLATE_DIR, template))
+        external = External(**ext_yml)
+        rendered = templ.render(e=external)
+        if not outfile:
+            outfile = self.fullname + ".c"
+        target = self.project_path / outfile
+        with open(target, "w") as f:
+            f.write(rendered)
+        print(target, "rendered")
 
 
+# ----------------------------------------------------------------------------
+# MAIN CLASS
+
+if __name__ == "__main__":
+    p = PdProject("counter.yml")
+    p.generate()

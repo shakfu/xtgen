@@ -7,13 +7,13 @@ Author: ${e.meta['author']}
 Repo: ${e.meta['repo']}
 
 
-## Parameters
+\## Parameters
 % for p in e.params:
-- ${p.name} (${p.type}) -- default: ${p.value}, min: ${p.min},  max: ${p.max}
+- ${p.name} (${p.type}) -- default: ${p.initial}
 % endfor
 
 
-## Features:
+\## Features:
 % for feature in e.meta['features']:
 - ${feature}
 % endfor
