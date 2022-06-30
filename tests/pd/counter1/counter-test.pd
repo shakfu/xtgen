@@ -3,12 +3,10 @@
 #X msg 236 52 1 10;
 #X msg 170 21 bound 1 10;
 #X floatatom 303 52 5 0 0 0 - - -;
-#X obj 144 53 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1
--1;
+#X obj 144 53 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1 -1;
 #X floatatom 370 53 5 0 0 0 - - -;
 #X floatatom 170 114 5 0 0 0 - - -;
-#X obj 220 116 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144
--1 -1;
+#X obj 220 116 bng 15 250 50 0 empty empty empty 17 7 0 10 -262144 -1 -1;
 #X symbolatom 270 142 10 0 0 0 - - -;
 #X obj 319 116 print;
 #X obj 370 116 print;
