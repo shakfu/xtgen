@@ -2,6 +2,8 @@
 
 A pure python to pd transpiler.
 
+The following pd file
+
 #N canvas 530 323 450 300 12;
 #X obj 166 80 osc~ 440;
 #X floatatom 166 41 5 0 500 0 freq - - 0;
@@ -30,9 +32,6 @@ is constructed by:
 class Mixin:
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self}'>"
-
-    def __str__(self):
-        return " ".join(str(i) for i in self.property_list)
 
 
 class Canvas(Mixin):
@@ -109,17 +108,40 @@ def pd_record(chunk_type: str, element_type: str, *args, x: int = 0, y: int = 0)
 
 
 
-class PdObject(Mixin):
-    counter = 0
-    def __init__(self, chunk_type, element_type, *params, **kwds):
-        self.__class__.counter += 1
+class PdObject:
+    """
+    General Pure-Data object class
+
+    Can represent a pd object
+
+    >>> p = PdObject('X', 'obj', 'osc~', 440, x=40, y=80)
+    >>> str(p)
+    '#X obj 40 80 osc~ 440;'
+
+    """
+    OBJ_COUNTER = 0
+    DEFAULT_X_POS = 20
+    DEFAULT_Y_POS = 20
+
+    def __init__(self, chunk_type, element_type, *args, **kwds):
+        PdObject.OBJ_COUNTER += 1
+        assert chunk_type in ['X', 'N', 'A']
         self.chunk_type = chunk_type
         self.element_type = element_type
-        self.params = params
+        self.args = args
+        self.x = kwds.get('x', self.DEFAULT_X_POS)
+        self.y = kwds.get('y', self.DEFAULT_Y_POS)
+
+    def __str__(self):
+        params = " ".join(str(i) for i in self.args)
+        return f'#{self.chunk_type} {self.element_type} {self.x} {self.y} {params};'
+
+    def __repr__(self):
+        return f"<{self.__class__.__name__}: '{self}'>"
 
     @property
     def id(self):
-        return self.__class__.counter
+        return PdObject.OBJ_COUNTER
 
 
 
@@ -127,58 +149,44 @@ class Msg(PdObject):
     """pd message object
 
     #X msg <x_pos> <y_pos> <p1> <p2> <p3> <...>
+
+    >>> m = Msg("freq", 100)
+    >>> str(m)
+    '#X msg 20 30 freq 100;'
+
     """
 
     DEFAULT_X_POS = 20
-    DEFAULT_Y_POS = 20
+    DEFAULT_Y_POS = 30
 
-    def __init__(self, content, x_pos=None, y_pos=None):
-        self.chunk_type = "#X"
-        self.type = "msg"
-        self.content = content
-        self.x_pos = x_pos if x_pos else self.DEFAULT_X_POS
-        self.y_pos = y_pos if y_pos else self.DEFAULT_Y_POS
+    def __init__(self, *args, **kwds):
+        super().__init__("X", "msg", *args, **kwds)
 
-
-    @property
-    def property_list(self):
-        return [
-            self.chunk_type,
-            self.type,
-            self.x_pos,
-            self.y_pos,
-        ] + self.content.split()
 
 
 class Obj(PdObject):
     """pd message object
 
     #X obj <x_pos> <y_pos> <name> <p1> <p2> <p3> <...>
+
+    >>> o = Obj('osc~', 440)
+    >>> str(o)
+    '#X obj 20 40 osc~ 440;'
+
     """
 
     DEFAULT_X_POS = 20
-    DEFAULT_Y_POS = 20
+    DEFAULT_Y_POS = 40
 
-    def __init__(self, content, x_pos=None, y_pos=None):
-        self.chunk_type = "#X"
-        self.type = "obj"
-        self.name, *self.params = content.split()
-        self.x_pos = x_pos if x_pos else self.DEFAULT_X_POS
-        self.y_pos = y_pos if y_pos else self.DEFAULT_Y_POS
+    def __init__(self, name, *args, **kwds):
+        args = (name,) + args
+        super().__init__("X", "obj", *args, **kwds)
 
 
-    @property
-    def property_list(self):
-        return [
-            self.chunk_type,
-            self.type,
-            self.x_pos,
-            self.y_pos,
-            self.name,
-        ] + self.params
+if __name__ == '__main__':
+    c = Canvas()
+    s = Subcanvas()
+    m = Msg("freq", 100)
+    o = Obj('osc~', 440)
 
 
-c = Canvas()
-s = Subcanvas()
-m = Msg("nice one please")
-o = Obj("osc~ 440")
