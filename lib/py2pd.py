@@ -2,29 +2,32 @@
 
 A pure python to pd transpiler.
 
-For examples:
+#N canvas 530 323 450 300 12;
+#X obj 166 80 osc~ 440;
+#X floatatom 166 41 5 0 500 0 freq - - 0;
+#X obj 166 148 *~ 0.1;
+#X obj 166 226 dac~;
+#X connect 0 0 2 0;
+#X connect 1 0 0 0;
+#X connect 2 0 3 0;
+#X connect 2 0 3 1;
+
+is constructed by:
 
 >>> p = Patch('demo.pd')
 >>> osc = p.add_obj('osc~ 440')
->>> mult = p.add_obj('~*')
+>>> freq = p.add_number('freq', min=0, max=500)
+>>> mult = p.add_obj('~*', 0.1)
 >>> dac = p.add_obj('dac~')
+>>> p.link(freq, osc)
 >>> p.link(osc, mult)
 >>> p.link(mult, dac)
->>> p.save()
-
-OR
-
->>> p = Patch('demo.pd')
->>> osc = p.add('osc~ 440')
->>> mult = p.add('~*')
->>> dac = p.add('dac~')
->>> p.link(osc, mult)
 >>> p.link(mult, dac)
 >>> p.save()
 
 """
 
-class PdObject:
+class Mixin:
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self}'>"
 
@@ -32,8 +35,7 @@ class PdObject:
         return " ".join(str(i) for i in self.property_list)
 
 
-
-class Canvas(PdObject):
+class Canvas(Mixin):
     """Top-level container object in Puredata.
 
     #N canvas <x_pos> <y_pos> <x_size> <y_size> <font_size>
@@ -95,6 +97,30 @@ class Subcanvas(Canvas):
             self.name,
             self.open_on_load,
         ]
+
+
+
+
+def pd_record(chunk_type: str, element_type: str, *args, x: int = 0, y: int = 0):
+    """returns a str representation of a pure-data record in the pd file format"""
+    assert chunk_type in ['X', 'N', 'A']
+    params = " ".join(str(i) for i in args)
+    return f'#{chunk_type} {element_type} {x} {y} {params};'
+
+
+
+class PdObject(Mixin):
+    counter = 0
+    def __init__(self, chunk_type, element_type, *params, **kwds):
+        self.__class__.counter += 1
+        self.chunk_type = chunk_type
+        self.element_type = element_type
+        self.params = params
+
+    @property
+    def id(self):
+        return self.__class__.counter
+
 
 
 class Msg(PdObject):

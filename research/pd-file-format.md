@@ -5,11 +5,12 @@ date: October 23, 2004
 output:
   pdf_document:
     toc: true
-    toc_depth: 2
+    toc_depth: 3
 ---
 
+\newpage
 
-# Introduction
+## Introduction
 
 source: https://puredata.info/docs/developer/PdFileFormat
 
@@ -40,25 +41,24 @@ An example
 #X connect 2 0 3 0;
 #X connect 2 0 3 1;
 ```
+\newpage
 
 ## Records
 
 The PD fileformat is a genuine custom textfile format, not to be confused with XML. It consists of one or more records.
 
-Each record may cover multiply lines but they all have the same syntax:
+From a high-level each record may cover multiply lines but they all have the same syntax:
 
 ```
-#[data];\r\n
+#[data]\r\n;
 ```
 
-where`[data]` holds the record data, `\r` represents an ASCII code 13 carriage return character, and `\n` represents an ASCII code 10 line-feed character.
-
-Let us take a closer look on the records contents.
+where`[data]` holds the record data, `\r` represents an ASCII code 13 carriage return character, and `\n` represents an ASCII code 10 line-feed character. Going forward in this document, such characters will be omitted from the examples.
 
 Each record consists of a chunk type, element type and optional parameters like this:
 
 ```
-#[chunk_type] [element_type] [p1] [p2] [p3] [...];\r\n
+#[chunk_type] [element_type] [p1] [p2] [p3] [...];
 ```
 
 
@@ -74,7 +74,7 @@ Each record consists of a chunk type, element type and optional parameters like 
 def pd_record(chunk_type, element_type, *params):
     assert chunk_type in ['X', 'N', 'A']
     args = " ".join(str(p) for p in params)
-    return f'#{chunk_type} {element_type} {args};\r\n'
+    return f'#{chunk_type} {element_type} {args};'
 
 ```
 
@@ -84,13 +84,14 @@ def pd_record(chunk_type, element_type, *params):
 
 `[p1] [p2] [p3] [...]` are the required parameters for each element, this differences per element.
 
+\newpage
 
 ## Wiring
 
 Almost all objects can be interconnected with wires in PureData. Each wire is stored in the file using the following syntax:
 
 ```
-#X connect [source] [outlet_number] [target] [inlet_number];\r\n
+#X connect [source] [outlet_number] [target] [inlet_number];
 ```
 
 ```python
@@ -133,6 +134,7 @@ All other elements are used to build actual PureData objects:
 - text - comment
 
 
+\newpage
 
 ## Common parameters
 
@@ -173,6 +175,7 @@ Labels: the many GUI-elements that have a `[label]` attribute can be named. In i
 
 Other parameters: Because of the difference between element parameters there is no default syntax for all elements. They may or may not look much like other elements, depending on their visual and functional similarities.
 
+\newpage
 
 ## Reference
 
@@ -182,20 +185,21 @@ Announces array data
 
 Syntax:
 
-- `#A [p1] [p2] [p3] [...];\r\n`
+`#A [p1] [p2] [p3] [...];`
 
 Parameters:
 
-- `[p1] [p2] [p3] [...]` floating point variables representing array elements
+`[p1] [p2] [p3] [...]` floating point variables representing array elements
 
 Example:
 
-- See Array
+See Array
 
-Remarks:
+Notes:
 
 - Used only in combination of an array definition
 
+\newpage
 
 ### N
 
@@ -203,20 +207,21 @@ Announces a frameset
 
 Syntax:
 
-- `#N [new_frame];\r\n`
+`#N [new_frame];`
 
 Parameters:
 
-- `[new_frame]` new frameset, currently only a new patchwindow can be defined
+`[new_frame]` new frameset, currently only a new patchwindow can be defined
 
 Example:
 
-- see canvas
+see canvas
 
-Remarks:
+Notes:
 
 - Currently used only for new canvas definitions
 
+\newpage
 
 ### canvas
 
@@ -224,7 +229,7 @@ Defines window properties
 
 Syntax:
 
-- `#N canvas [x_pos] [y_pos] [x_size] [y_size] [name] [open_on_load];\r\n`
+`#N canvas [x_pos] [y_pos] [x_size] [y_size] [name] [open_on_load];`
 
 Parameters:
 
@@ -248,16 +253,17 @@ Example:
 #X restore 41 136 pd thiscanvas;
 ```
 
-Remarks:
+Notes:
 
-In this example patch there are two canvas definitions.
+In this example patch there are two canvas definitions:
 
-The first example has a special syntax, the attributes `[name]` and `[open_on_load]` have been replaced by a `[font_size]` attribute. This is only the case when the canvas definition is the first record in the patchfile, to define the position and size of the main patcher window, and set the default font size. When a first canvas definition is absent the default values of PureData are used. Note that in this case you can alter the default font size with a command line parameter.
+1. The first example has a special syntax, the attributes `[name]` and `[open_on_load]` have been replaced by a `[font_size]` attribute. This is only the case when the canvas definition is the first record in the patchfile, to define the position and size of the main patcher window, and set the default font size. When a first canvas definition is absent the default values of PureData are used. Note that in this case you can alter the default font size with a command line parameter.
 
-The second example shows a regular internal subpatch definition. Normally a canvas defintion is always postceeded with a restore element to define the position within the canvas, and the name of the subpatch.
+2. The second example shows a regular internal subpatch definition. Normally a canvas defintion is always postceeded with a restore element to define the position within the canvas, and the name of the subpatch.
 
 Presumably, the canvas name in the canvas defintion and restore definition should be thesame.
 
+\newpage
 
 ### X
 
@@ -265,22 +271,21 @@ Announces regular elements
 
 Syntax:
 
-- `#X [element];\r\n`
+`#X [element];`
 
 Parameters:
 
-- `[element] - element definition`
+`[element] - element definition`
 
 Example:
 
-- `#X obj 50 36;`
+`#X obj 50 36;`
 
-Remarks:
+Notes:
 
 - Used with every element definition except canvas definitions
 
-
- 
+\newpage
 
 ### array
 
@@ -288,9 +293,10 @@ Array
 
 Syntax:
 
-`#X array [array_name] [array_size] float [save_flag];\r\n`
+`#X array [array_name] [array_size] float [save_flag];`
 
 Parameters:
+
 ```
 [array_name] - name / handle of the array 
 [array_size] - total number of elements of an array
@@ -298,6 +304,7 @@ Parameters:
 ```
 
 Example:
+
 ```
 #N canvas 0 0 450 300 graph4 0;
 #X array array3 10 float 1;
@@ -306,12 +313,11 @@ Example:
 #X restore 270 193 graph;
 ```
 
-Remarks:
+Notes:
 
 - An array is a gui-form of a table, always visualised using a graph. Optionally the array data can be saved in the patch - which can be very space-consuming and CPU intensive when you want to store a large number of floating point values typed out in a textfile.
 
-
- 
+\newpage
 
 ### connect
 
@@ -319,9 +325,10 @@ Wires GUI-elements
 
 Syntax:
 
-- `#X connect [source] [outlet] [target] [inlet];\r\n`
+`#X connect [source] [outlet] [target] [inlet];`
 
 Parameters:
+
 ```
 [source]
 [outlet]
@@ -330,6 +337,7 @@ Parameters:
 ```
 
 Example:
+
 ```
 #X obj 30 27 midiin;
 #X obj 26 59 midiout;
@@ -337,10 +345,11 @@ Example:
 #X connect 0 1 1 1;
 ```
 
-Remarks:
+Notes:
 
 - Objects are virtually numbered in order of appearance in the file, starting from zero. Inlets and outlets of the objects are numbered likewise. 
 
+\newpage
 
 ### coords
 
@@ -348,7 +357,7 @@ Visual ranges of a frameset (window)
 
 Syntax:
 
-`#X coords [x_from] [y_to] [x_to] [y_from] [width] [heigth] [graph_on_parent];\r\n`
+`#X coords [x_from] [y_to] [x_to] [y_from] [width] [heigth] [graph_on_parent];`
 
 Parameters:
 
@@ -370,7 +379,7 @@ Example:
 #X restore 58 26 graph;
 ```
 
-Remarks:
+Notes:
 
 - A coords statement must always be preceded with a canvas statement which also holds the graph name. 
 
@@ -378,6 +387,7 @@ Remarks:
 
 - Off limit values will be displayed outside the graph in the PureData GUI.
 
+\newpage
 
 ### floatatom
 
@@ -385,9 +395,10 @@ Defines a number box
 
 Syntax:
 
-`#X floatatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send];\r\n`
+`#X floatatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within window 
 [y_pos] - vertical position within window
@@ -399,16 +410,18 @@ Parameters:
 [receive] - receive symbol name 
 [send] - send symbol name
 ```
+
 Example:
 
 `#X floatatom 32 26 5 0 0 0 - - -;`
 
-Remarks:
+Notes:
 
 - When the value of [upper_limit] minus the value of `[lower_limit]` is less than one, or the `[width]` attribute is set to one, PureData resets these values both to zero.
 
 - Floatatom and symbolatom are the only elements that uses "-" characters to indicate that no value has been assigned to its attributes `[label]`, `[receive]` and `[send]`.
 
+\newpage
 
 ### msg
 
@@ -416,7 +429,7 @@ Defines a message
 
 Syntax:
 
-`#X msg [x_pos] [y_pos] [p1] [p2] [p3] [...];\r\n`
+`#X msg [x_pos] [y_pos] [p1] [p2] [p3] [...];`
 
 Parameters:
 
@@ -430,7 +443,7 @@ Example:
 
 `#X msg 61 48 read audio.wav;`
 
-
+\newpage
 
 ### obj
 
@@ -438,7 +451,7 @@ Defines an object
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] [object_name] [p1] [p2] [p3] [...];\r\n`
+`#X obj [x_pos] [y_pos] [object_name] [p1] [p2] [p3] [...];`
 
 Parameters:
 
@@ -456,10 +469,11 @@ Example:
 #X obj 132 72 trigger bang float;
 ```
 
-Remarks:
+Notes:
 
 - The first line is an example of an empty object. The second line describes a trigger object with its parameters.
 
+\newpage
 
 ### bng
 
@@ -467,7 +481,7 @@ Defines a bang
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] bng [size] [hold] [interrupt] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] ;\r\n`
+`#X obj [x_pos] [y_pos] bng [size] [hold] [interrupt] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] ;`
 
 Parameters:
 
@@ -494,15 +508,13 @@ Example:
 
 `#X obj 27 32 bng 15 10000 100 1 empty empty empty 0 -6 0 8 -262144 -1 -1;`
 
-Remarks:
+Notes:
 
 - Hold time is for how long you see a flash when you click on the bang, interrupt time is for how long you don't see it flash when you click on this object while it's flashing.
 
 - `[send]`, `[receive]` and `[label]` cannot be named "empty", this is a reserved name for when no value is assigned. 
 
-
-
- 
+\newpage
 
 ### tgl
 
@@ -510,7 +522,7 @@ Defines a toggle
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] tgl [size] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [init_value] [default_value] ;\r\n`
+`#X obj [x_pos] [y_pos] tgl [size] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [init_value] [default_value] ;`
 
 Parameters:
 ```
@@ -535,15 +547,15 @@ Example:
 
 `#X obj 29 44 tgl 15 1 empty empty empty 0 -6 192 8 -262144 -1 -1 234 234;`
 
-Remarks:
+Notes:
 
 - `[send]`, `[receive]` and `[label]` cannot be named "empty", this is a reserved name for when no value is assigned.
 
 - The `[default_value]` attribute can be changed in a patch and saved, this is why there are different values for `[init_value]` and `[default_value]`
 
 
+\newpage
 
- 
 
 ### nbx
 
@@ -551,7 +563,7 @@ Defines a Number2 number box
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] nbx [size] [height] [min] [max] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [log_height];\r\n`
+`#X obj [x_pos] [y_pos] nbx [size] [height] [min] [max] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [log_height];`
 
 Parameters:
 
@@ -580,12 +592,13 @@ Example:
 
 `#X obj 39 48 nbx 5 14 -1e+037 1e+037 0 0 empty empty empty 0 -6 0 10 -262144 -1 -1 0 256;`
 
-Remarks:
+Notes:
 
 - This element resembles the floatatom element, but is extended with gui and logarithmic parameters and (probably) more accurate.
 
 - The attributes `[font]`, `[font_size]` and `[fg_color]` also apply to the digits.
 
+\newpage
 
 ### vsl
 
@@ -593,9 +606,10 @@ Defines a vertical slider
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] vsl [width] [height] [bottom] [top] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value] [steady_on_click];\r\n`
+`#X obj [x_pos] [y_pos] vsl [width] [height] [bottom] [top] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value] [steady_on_click];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window 
@@ -623,13 +637,11 @@ Example:
 
 `#X obj 50 38 vsl 15 128 0 127 0 0 empty empty empty 0 -8 0 8 -262144 -1 -1 0 1;`
 
-Remarks:
+Notes:
 
-The vertical slider object and the horizontal slider are the only objects which have a default value multiplied by hundred. This purpose is unknown.
+- The vertical slider object and the horizontal slider are the only objects which have a default value multiplied by hundred. This purpose is unknown.
 
-
-
- 
+\newpage
 
 ### hsl
 
@@ -637,7 +649,7 @@ Defines a horizontal slider
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] hsl [width] [height] [bottom] [top] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value] [steady_on_click];\r\n`
+`#X obj [x_pos] [y_pos] hsl [width] [height] [bottom] [top] [log] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value] [steady_on_click];`
 
 Parameters:
 
@@ -668,12 +680,11 @@ Example:
 
 `#X obj 53 44 hsl 128 15 0 127 0 0 empty empty empty -2 -6 0 8 -262144 -1 -1 0 1;`
 
-Remarks:
+Notes:
 
 - The horizontal slider object and the vertical slider are the only objects which have a default value multiplied by hundred. This purpose is unknown.
 
-
- 
+\newpage
 
 ### vradio
 
@@ -681,9 +692,10 @@ Defines a vertical radio button selector
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] vradio [size] [new_old] [init] [number] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value];\r\n`
+`#X obj [x_pos] [y_pos] vradio [size] [new_old] [init] [number] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window 
@@ -703,17 +715,16 @@ Parameters:
 [label_color] - label color
 [default_value] - default value to be sent on patch load when the [init] attribute has been set.
 ```
+
 Example:
 
-- `#X obj 48 42 vradio 15 1 0 8 empty empty empty 0 -6 0 8 -262144 -1 -1 0;`
+`#X obj 48 42 vradio 15 1 0 8 empty empty empty 0 -6 0 8 -262144 -1 -1 0;`
 
-Remarks:
+Notes:
 
 - The purpose of the [new_old] switch is unknown.
-
-
-
  
+\newpage
 
 ### hradio
 
@@ -721,9 +732,10 @@ Defines a horizontal radio button selector
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] hradio [size] [new_old] [init] [number] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value];\r\n`
+`#X obj [x_pos] [y_pos] hradio [size] [new_old] [init] [number] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] [default_value];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window 
@@ -748,10 +760,11 @@ Example:
 
 `#X obj -50 54 hradio 15 1 0 8 empty empty empty 0 -6 0 8 -262144 -1 -1 0;`
 
-Remarks:
+Notes:
 
-The purpose of the [new_old] switch is unknown.
+- The purpose of the [new_old] switch is unknown.
 
+\newpage
 
 ### vu
 
@@ -759,7 +772,7 @@ Defines a VU-meter
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] vu [width] [height] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [label_color] [scale] [];\r\n`
+`#X obj [x_pos] [y_pos] vu [width] [height] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [label_color] [scale] [];`
 
 Parameters:
 
@@ -784,13 +797,11 @@ Example:
 
 `#X obj 40 44 vu 15 120 empty empty -1 -8 0 8 -66577 -1 1 0;`
 
-Remarks:
+Notes:
 
-We looked inside the source code but still couldn't see the purpose of the final value.
+- We looked inside the source code but still couldn't see the purpose of the final value.
 
-
-
- 
+\newpage
 
 ### cnv
 
@@ -798,9 +809,10 @@ Defines a canvas, a gui component
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] cnv [size] [width] [height] [send] [receive] [label] [x_off] [y_off] [font] [font_size] [bg_color] [label_color] [];\r\n`
+`#X obj [x_pos] [y_pos] cnv [size] [width] [height] [send] [receive] [label] [x_off] [y_off] [font] [font_size] [bg_color] [label_color] [];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window
@@ -823,13 +835,11 @@ Example:
 
 `#X obj 27 40 cnv 15 100 60 empty empty empty 20 12 0 14 -233017 -66577 0;`
 
-Remarks:
+Notes:
 
 - We couldn't find the purpose of the final value.
 
-
-
- 
+\newpage
 
 ### [name]
 
@@ -837,26 +847,26 @@ Defines an external subpatch or library patch
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] [name] [p1] [p2] [p3] [...] ;\r\n`
+`#X obj [x_pos] [y_pos] [name] [p1] [p2] [p3] [...] ;`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window
 [name] - name of the subpatch / library patch
 [p1] [p2] [p3] [...] - optional parameters
 ```
+
 Example:
 
 `#X obj 121 102 subpatch;`
 
-Remarks:
+Notes:
 
 - If the external object isn't in the loaded libraries PureData searches in the folder of the main frame (window) to locate the object. 
 
-
-
- 
+\newpage
 
 ### pd
 
@@ -864,7 +874,7 @@ Defines an internal subpatch
 
 Syntax:
 
-`#X restore [x_pos] [y_pos] pd [name];\r\n`
+`#X restore [x_pos] [y_pos] pd [name];`
 
 Parameters:
 
@@ -891,15 +901,13 @@ Example:
 #X connect 1 0 0 0;
 ```
 
-Remarks:
+Notes:
 
 - Naturally the restore element which invokes a subpatch is preceded with a canvas element and the subpatch elements. 
 
 - Objects within a subpatch are counted seperately from a parent frame (window).
 
-
-
- 
+\newpage
 
 ### restore
 
@@ -907,7 +915,7 @@ Ends a canvas definition
 
 Syntax:
 
-`#X restore [x_pos] [y_pos] [type] [name];\r\n`
+`#X restore [x_pos] [y_pos] [type] [name];`
 
 Parameters:
 
@@ -919,6 +927,7 @@ Parameters:
 ```
 
 Example:
+
 ```
 #N canvas 0 0 450 300 graph2 0;
 #X coords 0 1 100 -1 200 140 1;
@@ -926,12 +935,13 @@ Example:
 ```
 
 Example:
+
 ```
 #N canvas 0 0 452 302 subpatch 0;
 #X restore 64 69 pd subpatch;
 ```
 
-Remarks:
+Notes:
 
 - The restore element is used only in combination with canvas elements. There are two uses:
 
@@ -939,18 +949,18 @@ Remarks:
 
 - In the second example it defines a subpatch. In this case only the canvas attribute [name] and the restore attribute [name] should correlate.
 
-
-
- 
+\newpage
 
 ### symbolatom
 
 Defines an symbol box
 
 Syntax:
-`#X symbolatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send];\r\n`
+
+`#X symbolatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send];`
 
 Parameters:
+
 ```
 [x_pos] - horizontal position within the window
 [y_pos] - vertical position within the window
@@ -967,15 +977,13 @@ Example:
 
 `#X symbolatom 36 37 10 0 0 0 - - -;`
 
-Remarks:
+Notes:
 
 - When the value of [upper_limit] minus the value of [lower_limit] is less than one, PureData resets these values both to zero.
 
 - Symbolatom and floatatom are the only elements that uses "-" characters to indicate that no value has been assigned to its attributes [label], [receive] and [send].
 
-
-
- 
+\newpage
 
 ### text
 
@@ -983,7 +991,7 @@ Defines a comment
 
 Syntax:
 
-`#X text [x_pos] [y_pos] [comment];\r\n`
+`#X text [x_pos] [y_pos] [comment];`
 
 Parameters:
 
@@ -996,9 +1004,9 @@ Example:
 
 `#X text 28 25 comment;`
 
-Remarks:
+Notes:
 
-ASCII return codes 13 and 10 are not stored, a semicolon character is preceded with the escape character backslash. 
+- ASCII return codes 13 and 10 are not stored, a semicolon character is preceded with the escape character backslash. 
 
 
 
