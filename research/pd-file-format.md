@@ -395,7 +395,7 @@ Defines a number box
 
 Syntax:
 
-`#X floatatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send];`
+`#X floatatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send] [fontsize];`
 
 Parameters:
 
@@ -409,6 +409,7 @@ Parameters:
 [label] - floatatom label/name
 [receive] - receive symbol name 
 [send] - send symbol name
+[fontsize] - size of font (0 = auto)
 ```
 
 Example:
@@ -481,7 +482,7 @@ Defines a bang
 
 Syntax:
 
-`#X obj [x_pos] [y_pos] bng [size] [hold] [interrupt] [init] [send] [receive] [label] [x_off] [y_off] [font] [fontsize] [bg_color] [fg_color] [label_color] ;`
+`#X obj [x_pos] [y_pos] bng [size] [hold] [interrupt] [init] [send] [receive] [label] [x_offset] [y_offset] [font] [fontsize] [bg_color] [fg_color] [label_color] ;`
 
 Parameters:
 
@@ -495,8 +496,8 @@ Parameters:
 [send] - send symbol name 
 [receive] - receive symbol name 
 [label] - label
-[x_off] - horizontal position of the label text relative to the upperleft corner of the object 
-[y_off] - vertical position of the label text relative to the upperleft corner of the object 
+[x_offset] - horizontal position of the label text relative to the upperleft corner of the object 
+[y_offset] - vertical position of the label text relative to the upperleft corner of the object 
 [font] - font type 
 [fontsize] - font size
 [bg_color] - background color 

@@ -2,31 +2,6 @@
 
 A pure python to pd transpiler.
 
-The following pd file
-
-#N canvas 530 323 450 300 12;
-#X obj 166 80 osc~ 440;
-#X floatatom 166 41 5 0 500 0 freq - - 0;
-#X obj 166 148 *~ 0.1;
-#X obj 166 226 dac~;
-#X connect 0 0 2 0;
-#X connect 1 0 0 0;
-#X connect 2 0 3 0;
-#X connect 2 0 3 1;
-
-is constructed by:
-
->>> p = Patch('demo.pd')
->>> osc = p.add_obj('osc~ 440')
->>> freq = p.add_number('freq', min=0, max=500)
->>> mult = p.add_obj('~*', 0.1)
->>> dac = p.add_obj('dac~')
->>> p.link(freq, osc)
->>> p.link(osc, mult)
->>> p.link(mult, dac)
->>> p.link(mult, dac)
->>> p.save()
-
 """
 
 class Mixin:
@@ -34,7 +9,7 @@ class Mixin:
         return f"<{self.__class__.__name__}: '{self}'>"
 
 
-class Canvas(Mixin):
+class canvas(Mixin):
     """Top-level container object in Puredata.
 
     #N canvas <x_pos> <y_pos> <x_size> <y_size> <font_size>
@@ -70,7 +45,7 @@ class Canvas(Mixin):
         ]
 
 
-class Subcanvas(Canvas):
+class subcanvas(canvas):
     """child container object in Puredata.
 
     #N canvas <x_pos> <y_pos> <x_size> <y_size> <name> <open_on_load>
@@ -145,12 +120,12 @@ class PdObject:
 
 
 
-class Msg(PdObject):
+class msg(PdObject):
     """pd message object
 
     #X msg <x_pos> <y_pos> <p1> <p2> <p3> <...>
 
-    >>> m = Msg("freq", 100)
+    >>> m = msg("freq", 100)
     >>> str(m)
     '#X msg 20 30 freq 100;'
 
@@ -164,12 +139,12 @@ class Msg(PdObject):
 
 
 
-class Obj(PdObject):
+class obj(PdObject):
     """pd message object
 
     #X obj <x_pos> <y_pos> <name> <p1> <p2> <p3> <...>
 
-    >>> o = Obj('osc~', 440)
+    >>> o = obj('osc~', 440)
     >>> str(o)
     '#X obj 20 40 osc~ 440;'
 
@@ -183,10 +158,44 @@ class Obj(PdObject):
         super().__init__("X", "obj", *args, **kwds)
 
 
-if __name__ == '__main__':
-    c = Canvas()
-    s = Subcanvas()
-    m = Msg("freq", 100)
-    o = Obj('osc~', 440)
+class floatatom(PdObject):
+    """defines a pd number box
+
+    #X floatatom [x_pos] [y_pos] [width] [lower_limit] [upper_limit] [label_pos] [label] [receive] [send] [font_size];
+    #X floatatom 166     41      5       0             500           0           freq    -         -      0;
+    #X floatatom 152     75      5       0             0             0           -       -         -      0;
+
+    >>> f = floatatom('freq', 10, 100)
+    >>> str(f)
+    '#X floatatom 20 40 5 10 100 0 freq - - 0;'
+
+    """
+    DEFAULT_X_POS = 20
+    DEFAULT_Y_POS = 40
+
+    def __init__(self, label='-', lower_limit=0, upper_limit=0,
+            width=5, label_pos=0, receive='-', send='-', font_size=0, **kwds):
+        args = (width, lower_limit, upper_limit, label_pos, label, receive, send, font_size)
+        super().__init__("X", "floatatom", *args, **kwds)
+
+
+class bng(PdObject):
+    """defines a bang
+
+    #X obj [x_pos] [y_pos] bng [size] [hold] [interrupt] [init] [send] [receive] [label] [x_offset] [y_offset] [font] [fontsize] [bg_color] [fg_color] [label_color] ;
+    #X obj 181     119     bng 15     250    50          0       empty  empty    empty   17         7      0      10          #fcfcfc   #000000    #000000;
+
+
+    """
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
+
+    # c = canvas()
+    # s = subcanvas()
+    # m = msg('freq', 100)
+    # o = obj('osc~', 440)
+    # f = floatatom('freq', 10, 100)
 
 
