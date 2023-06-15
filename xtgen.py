@@ -50,7 +50,7 @@ lookup_routine = lambda s: f'gensym("{s}")'
 # TYPE CLASSES
 
 
-class Type:
+class AbstractType:
     VALID_TYPES = []
 
     def __init__(self, name):
@@ -64,7 +64,7 @@ class Type:
         return f"<{self.__class__.__name__}: '{self.name}'>"
 
 
-class ScalarType(Type):
+class ScalarType(AbstractType):
     VALID_TYPES = ["bang", "float", "symbol", "pointer", "signal"]
 
     @property
@@ -90,7 +90,7 @@ class ScalarType(Type):
         }[self.name]
 
 
-class CompoundType(Type):
+class CompoundType(AbstractType):
     VALID_TYPES = ["list", "anything"]
 
     @property
@@ -122,13 +122,16 @@ class Object:
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
 
+    def __getattr__(self, attr):
+        return getattr(self.ns, attr)
+
 
 class TypeMethod(Object):
     valid_types = ["bang", "float", "int", "symbol", "pointer", "list", "anything"]
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
-        self.type = self.ns.type
+        # self.type = self.ns.type
         self.doc = self.ns.doc if hasattr(self.ns, "doc") else ""
         assert self.type in self.valid_types
 
@@ -166,9 +169,9 @@ class TypeMethod(Object):
 class MessagedMethod(Object):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
-        self.name = self.ns.name
+        # self.name = self.ns.name
         self.doc = self.ns.doc if hasattr(self.ns, "doc") else ""
-        self.params = self.ns.params
+        # self.params = self.ns.params
 
     @property
     def args(self):
