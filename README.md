@@ -4,8 +4,16 @@ A tool to generate skeleton puredata and Max/MSP external files.
 
 Has two intended purposes:
 
-- [ ] generate skeleton puredata and Max/MSP external code
-- [ ] generate related puredata and Max/MSP patch code
+- generate skeleton puredata and Max/MSP external code
+- generate related puredata and Max/MSP patch code
+
+
+## Requirements
+
+```bash
+pip3 install mako
+```
+
 
 ## Status
 

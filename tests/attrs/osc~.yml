@@ -1,13 +1,18 @@
 
 externals:
-  - namespace: my
-    name: counter
-    prefix: ctr
-    alias: cntr
+  - namespace: dsp
+    name: osc
+    prefix: osc
+    alias: osc
     params:
-      - {name: step,  type: float, min: 0.0, max: 1.0, initial: 0.5, arg: true, inlet: true, desc: ""}
-      - {name: lower, type: float, min: 0.0, max: 0.9, initial: 0.0, arg: true, inlet: false, desc: ""}
-      - {name: upper, type: float, min: 0.1, max: 1.0, initial: 1.0, arg: true, inlet: false, desc: ""}
+      - {name: freq, type: float, min: 0.0, max: 20000, initial: 1000, arg:  true, inlet: true, 
+                     desc: "Changes the frequency of the Oscillator, and recalculates phase increment."}
+      - {name: amp, type: float, min: 0.0, max: 1.0, initial: 0.0, arg: true, inlet: false,
+                    desc: "Sets the amplitude of the waveform."}
+      - {name: pulse_width, type: float, min: 0.0, max: 1.0, initial: 1.0, arg: true, inlet: false, 
+                    desc: "Sets the pulse width for WAVE_SQUARE and WAVE_POLYBLEP_SQUARE (range 0 - 1)"}
+      - {name: phase, type: float, min: 0.0, max: 1.0, initial: 1.0, arg: true, inlet: false, 
+                    desc: "Adds a value 0.0-1.0 (mapped to 0.0-TWO_PI) to the current phase. Useful for PM and FM synthesis."}
       # - {name: bound, type: list,  min: 0.0, max: 1.0, initial: [0.0, 1.0], arg: false, inlet: true, desc: ""}
     help: help-counter
     n_channels: 2

@@ -244,6 +244,7 @@ class Param(Object):
         self.type = self.ns.type
         self.is_arg = self.ns.arg
         self.has_inlet = self.ns.inlet
+        self.desc = self.ns.desc
 
     # def as_inlet(self):
     #     return Inlet(self.parent, vars(self.ns))
@@ -285,6 +286,9 @@ class External:
         self.meta = self.ns.meta
         self.help = self.ns.help
         self.alias = self.ns.alias if hasattr(self.ns, "alias") else None
+        self.namespace = self.ns.namespace
+        self.n_channels = self.ns.n_channels
+        self.prefix = self.ns.prefix
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
@@ -351,9 +355,8 @@ class External:
 # ----------------------------------------------------------------------------
 # MAIN CLASS
 
-
-class PdProject:
-    """main class to manage external projects and related files."""
+class Generator:
+    """main base class to manage external projects and related files."""
 
     def __init__(self, spec_yml, target_dir="output"):
         self.spec_yml = Path(spec_yml)
@@ -367,20 +370,7 @@ class PdProject:
         os.system(shell.format(*args, **kwds))
 
     def generate(self):
-        try:
-            Path("output").mkdir(exist_ok=True)
-            self.project_path.mkdir(exist_ok=True)
-        except OSError:
-            print(f"{self.project_path} already exists")
-            return
-
-        self.cmd(f"cp -rf resources/pd/Makefile.pdlibbuilder {self.project_path}")
-        if self.is_dsp:
-            self.render("pd-dsp-external.c.mako")
-        else:
-            self.render("pd-external.c.mako")
-        self.render("pd-Makefile.mako", "Makefile")
-        self.render("README.md.mako", "README.md")
+        """override this"""
 
     def render(self, template, outfile=None):
         with open(self.spec_yml) as f:
@@ -398,9 +388,49 @@ class PdProject:
         print(target, "rendered")
 
 
+class MaxProject(Generator):
+    """main max-centric class to manage external projects and related files."""
+
+    def generate(self):
+        try:
+            Path("output").mkdir(exist_ok=True)
+            self.project_path.mkdir(exist_ok=True)
+        except OSError:
+            print(f"{self.project_path} already exists")
+            return
+
+        if self.is_dsp:
+            self.render("mx/dsp-external.cpp.mako")
+        else:
+            self.render("mx/external.cpp.mako")
+        # self.render("mx/Makefile.mako", "Makefile")
+        self.render("mx/README.md.mako", "README.md")    
+
+
+class PdProject(Generator):
+    """main pd-centric class to manage external projects and related files."""
+
+    def generate(self):
+        try:
+            Path("output").mkdir(exist_ok=True)
+            self.project_path.mkdir(exist_ok=True)
+        except OSError:
+            print(f"{self.project_path} already exists")
+            return
+
+        self.cmd(f"cp -rf resources/pd/Makefile.pdlibbuilder {self.project_path}")
+        if self.is_dsp:
+            self.render("pd/dsp-external.c.mako")
+        else:
+            self.render("pd/external.c.mako")
+        self.render("pd/Makefile.mako", "Makefile")
+        self.render("pd/README.md.mako", "README.md")
+
+
 # ----------------------------------------------------------------------------
 # MAIN CLASS
 
 if __name__ == "__main__":
     p = PdProject("counter.yml")
+    # p = MaxProject("counter.yml")
     p.generate()
