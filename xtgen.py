@@ -8,6 +8,8 @@ Requires the following python packages:
 - mako
 - pyyaml
 
+## Example of Usage
+
 >>> import xtgen
 
 >>> xtgen.PdProject('counter.yml').generate()
@@ -18,6 +20,60 @@ Requires the following python packages:
 
 >>> xtgen.MaxProject('counter.yml').generate()
 >>> ... (similar as above)
+
+## Model
+
+external
+    namespace
+    name
+    prefix
+    meta
+        desc
+        author
+        repo
+    params
+    inlets
+    outlets
+    typed_methods
+    message_methods
+    dsp_methods
+    
+
+
+externals:
+
+    message_methods:
+      - name: reset
+        params: []
+        doc: reset count to zero
+
+      - name: bound
+        params: [float, float]
+        doc: set (or reset) lower and uppwer boundary of counter
+
+      - name: step
+        params: [float]
+        doc: set the counter increment per step
+
+    type_methods:
+      - type: bang
+        doc: each bang increments the counter
+
+      - type: float
+        doc: each number is printed out
+
+      - type: symbol
+        doc: each symbol is printed out
+
+      - type: pointer
+        doc: each pointer is printed out
+
+      - type: list
+        doc: each list is printed out
+
+      - type: anything
+        doc: enything is printed out
+
 
 
 """
@@ -268,7 +324,7 @@ class Outlet(Object):
         self.type = self.ns.type
 
 
-class External:
+class External(Object):
     mapping = {
         "float": "A_DEFFLOAT",
         "symbol": "A_DEFSYMBOL",
@@ -283,15 +339,15 @@ class External:
 
     def __init__(self, **kwargs):
         self.ns = SimpleNamespace(**kwargs)
-        self.name = self.ns.name
+        # self.name = self.ns.name
         self.type = f"t_{self.name}"
         self.klass = f"{self.name}_class"
-        self.meta = self.ns.meta
-        self.help = self.ns.help
+        # self.meta = self.ns.meta
+        # self.help = self.ns.help
         self.alias = self.ns.alias if hasattr(self.ns, "alias") else None
-        self.namespace = self.ns.namespace
-        self.n_channels = self.ns.n_channels
-        self.prefix = self.ns.prefix
+        # self.namespace = self.ns.namespace
+        # self.n_channels = self.ns.n_channels
+        # self.prefix = self.ns.prefix
 
     def __repr__(self):
         return f"<{self.__class__.__name__}: '{self.name}'>"
@@ -368,6 +424,7 @@ class Generator:
         self.is_dsp = self.fullname.endswith("~")
         self.target_dir = Path(target_dir)
         self.project_path = self.target_dir / self.fullname
+        self.model = None
 
     def cmd(self, shell, *args, **kwds):
         os.system(shell.format(*args, **kwds))
@@ -381,7 +438,7 @@ class Generator:
             ext_yml = yml["externals"][0]
 
         templ = Template(filename=os.path.join(TEMPLATE_DIR, template))
-        external = External(**ext_yml)
+        self.model = external = External(**ext_yml)
         rendered = templ.render(e=external)
         if not outfile:
             outfile = self.fullname + ".c"
