@@ -4,8 +4,13 @@ A tool to generate skeleton puredata and Max/MSP external files.
 
 Has two intended purposes:
 
-- generate skeleton puredata and Max/MSP external code
-- generate related puredata and Max/MSP patch code
+1. Generate skeleton puredata and Max/MSP external code
+
+2. Generate related puredata and Max/MSP patch code
+
+The idea is that an external is generically specified in a `<name>.yml` file, and then this file is used to generate one of several target formats {Max, PD, Hybrid, ...}
+
+The external model is roughly sketched in the `model.py` file.
 
 
 ## Requirements
@@ -30,17 +35,3 @@ A pd external project will be created in `output/counter` which should be compil
 ```bash
 make -C output/counter
 ````
-
-
-## TODO
-
-- [ ] create/generate inlets
-- [ ] create/generate outlets
-- [ ] params: should be either 'anything' or alternatives.
-- [ ] populate variables (switch statement)
-- [ ] fixed inconsistencies in `external.yml`, especiall `arg` vs `param` configuration
-- [ ] rulecheck: `anything` method vs. others (especially list), can be redundant.
-- [ ] generate pd help code
-- [ ] generate pd project
-- [ ] generate signal-based external
-- [ ] add utility library for builtin scaling, clamp, ..., dsp functions?
