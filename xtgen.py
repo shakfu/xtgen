@@ -91,8 +91,9 @@ from mako.lookup import TemplateLookup
 # ----------------------------------------------------------------------------
 # CONSTANTS
 
-TEMPLATE_DIR = os.path.join(os.getcwd(), "templates")
+TEMPLATE_DIR = os.path.join(os.getcwd(), "resources/templates")
 TEMPLATE_LOOKUP = TemplateLookup(directories=[TEMPLATE_DIR])
+OUTPUT_DIR = "build"
 
 # ----------------------------------------------------------------------------
 # UTILITY FUNCTIONS
@@ -417,7 +418,7 @@ class External(Object):
 class Generator:
     """main base class to manage external projects and related files."""
 
-    def __init__(self, spec_yml, target_dir="output"):
+    def __init__(self, spec_yml, target_dir=OUTPUT_DIR):
         self.spec_yml = Path(spec_yml)
         self.fullname = Path(spec_yml).stem
         self.name = self.fullname.strip("~")
@@ -453,7 +454,7 @@ class MaxProject(Generator):
 
     def generate(self):
         try:
-            Path("output").mkdir(exist_ok=True)
+            Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
         except OSError:
             print(f"{self.project_path} already exists")
@@ -472,7 +473,7 @@ class PdProject(Generator):
 
     def generate(self):
         try:
-            Path("output").mkdir(exist_ok=True)
+            Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
         except OSError:
             print(f"{self.project_path} already exists")
@@ -491,6 +492,6 @@ class PdProject(Generator):
 # MAIN CLASS
 
 if __name__ == "__main__":
-    p = PdProject("counter.yml")
-    # p = MaxProject("counter.yml")
+    p = PdProject("resources/examples/counter.yml")
+    # p = MaxProject("resources/examples/counter.yml")
     p.generate()

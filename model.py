@@ -1,4 +1,8 @@
 # models.py
+"""
+Not used except for sketching the xtgen object model
+
+"""
 
 from typing import Optional, TypeVar, TypeAlias, Union, ForwardRef
 
@@ -17,7 +21,7 @@ class Param:
     initial: number
     arg: bool
     inlet: bool
-    desc: str
+    desc: Optional[str] = None
 
 
 @dataclass

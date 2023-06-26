@@ -1,5 +1,9 @@
 #include <math.h>
 
+#define PI 3.1415926535
+#define HALF_PI 1.5707963
+
+
 /*
  * General helper functions for xtgen templates
  */
@@ -9,32 +13,42 @@ float clamp(float value, float smallest, float largest)
     return fmax(smallest, fmin(value, largest));
 }
 
-float linear_scale(float x, float from_min, float from_max, float to_min,
-                   float to_max)
+float linear_scale(float x, float from_min, float from_max, float to_min, float to_max)
 {
-    return ((to_max - to_min) * (x - from_min) / (from_max - from_min)) +
-           to_min;
+    return ((to_max - to_min) * (x - from_min) / (from_max - from_min)) + to_min;
 }
 
 // add easing functions... from https://github.com/nicolausYes/easing-functions
 
-#ifndef PI
-#define PI 3.1415926545
-#endif
+
+double ease_in_linear(double t, double b, double c, double d)
+{ 
+	return (c * t / d + b);
+}
+
+double ease_out_linear(double t, double b, double c, double d)
+{ 
+	return (c * t / d + b);
+}
+
+double ease_inout_linear(double t, double b, double c, double d)
+{ 
+	return (c * t / d + b);
+}
 
 double ease_in_sine(double t)
 {
-	return sin(1.5707963 * t);
+	return sin(HALF_PI * t);
 }
 
 double ease_out_sine(double t)
 {
-	return 1 + sin(1.5707963 * (--t));
+	return 1 + sin(HALF_PI * (--t));
 }
 
 double ease_inout_sine(double t)
 {
-    return 0.5 * (1 + sin(3.1415926 * (t - 0.5)));
+    return 0.5 * (1 + sin(PI * (t - 0.5)));
 }
 
 double ease_in_quad(double t)

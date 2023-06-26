@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "xtgen.h"
+#include "xtgen_pd.h"
 
 
 int main(void)
