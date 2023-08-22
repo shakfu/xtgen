@@ -37,7 +37,7 @@ external
     typed_methods
     message_methods
     dsp_methods
-    
+
 
 
 externals:
@@ -74,8 +74,6 @@ externals:
       - type: anything
         doc: enything is printed out
 
-
-
 """
 import argparse
 import os
@@ -108,9 +106,9 @@ lookup_routine = lambda s: f'gensym("{s}")'
 
 
 class AbstractType:
-    VALID_TYPES = []
+    VALID_TYPES: list[str] = []
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         assert name in self.VALID_TYPES
         self.name = name
 
@@ -125,19 +123,19 @@ class ScalarType(AbstractType):
     VALID_TYPES = ["bang", "float", "symbol", "pointer", "signal"]
 
     @property
-    def c_type(self):
+    def c_type(self) -> str:
         return f"t_{self.name}"
 
     @property
-    def lookup_address(self):
+    def lookup_address(self) -> str:
         return f"&s_{self.name}"
 
     @property
-    def lookup_routine(self):
+    def lookup_routine(self) -> str:
         return f'gensym("{self.name}")'
 
     @property
-    def type_method_arg(self):
+    def type_method_arg(self) -> str:
         return {
             "bang": "",
             "float": "t_floatarg f",
@@ -151,20 +149,20 @@ class CompoundType(AbstractType):
     VALID_TYPES = ["list", "anything"]
 
     @property
-    def c_type(self):
+    def c_type(self) -> str:
         assert self.name != "anything"  # doesn't exist for 'anything'
         return f"t_{self.name}"
 
     @property
-    def lookup_address(self):
+    def lookup_address(self) -> str:
         return f"&s_{self.name}"
 
     @property
-    def lookup_routine(self):
+    def lookup_routine(self) -> str:
         return f'gensym("{self.name}")'
 
     @property
-    def type_method_arg(self):
+    def type_method_arg(self) -> str:
         return {
             "list": "t_symbol *s, int argc, t_atom *argv",
             "anything": "t_symbol *s, int argc, t_atom *argv",
@@ -172,7 +170,7 @@ class CompoundType(AbstractType):
 
 
 class Object:
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent: 'Object', **kwargs):
         self.parent = parent
         self.ns = SimpleNamespace(**kwargs)
 
@@ -186,18 +184,18 @@ class Object:
 class TypeMethod(Object):
     valid_types = ["bang", "float", "int", "symbol", "pointer", "list", "anything"]
 
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent: Object, **kwargs):
         super().__init__(parent, **kwargs)
         # self.type = self.ns.type
         self.doc = self.ns.doc if hasattr(self.ns, "doc") else ""
         assert self.type in self.valid_types
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.type
 
     @property
-    def args(self):
+    def args(self) -> str:
         if self.type == "bang":
             return f"{self.parent.type} *x"
 
@@ -217,7 +215,7 @@ class TypeMethod(Object):
             raise Exception(f"argument '{self.type}' not implemented")
 
     @property
-    def class_addmethod(self):
+    def class_addmethod(self) -> str:
         return (
             f"class_add{self.type}({self.parent.klass}, {self.parent.name}_{self.type})"
         )
@@ -231,7 +229,7 @@ class MessagedMethod(Object):
         # self.params = self.ns.params
 
     @property
-    def args(self):
+    def args(self) -> str:
         prefix = f"{self.parent.type} *x"
 
         if len(self.params) == 0:
@@ -247,7 +245,7 @@ class MessagedMethod(Object):
                 return f"{prefix}, {type_str}"
 
     @property
-    def class_addmethod(self):
+    def class_addmethod(self) -> str:
         prefix = (
             f"class_addmethod({self.parent.name}_class, "
             f"(t_method){self.parent.name}_{self.name}, "
@@ -310,11 +308,11 @@ class Param(Object):
     #     return Inlet(self.parent, vars(self.ns))
 
     @property
-    def pd_type(self):
+    def pd_type(self) -> str:
         return self.c_types[self.type]
 
     @property
-    def struct_declaration(self):
+    def struct_declaration(self) -> str:
         return f"{self.pd_type} {self.name}"
 
 
@@ -354,7 +352,7 @@ class External(Object):
         return f"<{self.__class__.__name__}: '{self.name}'>"
 
     @property
-    def params(self):
+    def params(self) -> list[Param]:
         return [Param(self, **p) for p in self.ns.params]
 
     @property
@@ -440,7 +438,7 @@ class Generator:
 
         templ = Template(filename=os.path.join(TEMPLATE_DIR, template))
         self.model = external = External(**ext_yml)
-        rendered = templ.render(e=external)
+        rendered = str(templ.render(e=external))
         if not outfile:
             outfile = self.fullname + ".c"
         target = self.project_path / outfile
@@ -465,7 +463,7 @@ class MaxProject(Generator):
         else:
             self.render("mx/external.cpp.mako")
         # self.render("mx/Makefile.mako", "Makefile")
-        self.render("mx/README.md.mako", "README.md")    
+        self.render("mx/README.md.mako", "README.md")
 
 
 class PdProject(Generator):

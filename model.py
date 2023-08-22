@@ -8,17 +8,14 @@ from typing import Optional, TypeVar, TypeAlias, Union, ForwardRef
 
 from dataclasses import dataclass, asdict
 
-number = TypeVar('number', int, float)
-# number: TypeAlias = Union[int, float]
-
 
 @dataclass
 class Param:
     name: str
     type: str
-    min: number
-    max: number
-    initial: number
+    min: float
+    max: float
+    initial: float
     arg: bool
     inlet: bool
     desc: Optional[str] = None

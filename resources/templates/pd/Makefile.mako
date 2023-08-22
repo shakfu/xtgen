@@ -6,6 +6,8 @@ class.sources = ${e.name}.c
 
 datafiles = ${e.name}-help.pd README.md
 
+suppress-wunused = true
+
 include Makefile.pdlibbuilder
 
  
