@@ -18,13 +18,13 @@ A tool to generate skeleton PureData and Max/MSP external files from YAML or JSO
 
 This project uses uv for dependency management. Install dependencies with:
 
-```bash
+```sh
 uv sync
 ```
 
 Or install manually with pip:
 
-```bash
+```sh
 pip install mako pyyaml
 ```
 
@@ -34,7 +34,45 @@ pip install mako pyyaml
 
 The easiest way to use xtgen is through its command-line interface:
 
-```bash
+```sh
+usage: xtgen [-h] [-t {pd,max}] [-o DIR] [-v] [-q] [-f] [--list-examples]
+             [--validate]
+             [spec_file]
+
+Generate PureData and Max/MSP external projects from YAML or JSON specifications
+
+positional arguments:
+  spec_file             Path to YAML or JSON specification file (default:
+                        resources/examples/counter.yml)
+
+options:
+  -h, --help            show this help message and exit
+  -t, --target {pd,max}
+                        Target platform: 'pd' for PureData, 'max' for Max/MSP
+                        (default: pd)
+  -o, --output DIR      Output directory for generated projects (default: build)
+  -v, --verbose         Enable verbose output with detailed generation information
+  -q, --quiet           Suppress all output except errors
+  -f, --force           Force overwrite existing project directory without warning
+  --list-examples       List available example specification files and exit
+  --validate            Validate specification file without generating project
+
+Examples:
+  xtgen counter.yml                    # Generate PD project from YAML
+  xtgen counter.json                   # Generate PD project from JSON
+  xtgen -t max counter.yml             # Generate Max/MSP project
+  xtgen -o /tmp/build counter.yml      # Custom output directory
+  xtgen -v counter.yml                 # Verbose output
+  xtgen --list-examples                # List available examples
+
+Supported file formats:
+  .yml, .yaml  - YAML specification files
+  .json        - JSON specification files
+```
+
+It can be used as follows:
+
+```sh
 # Generate PureData project (default behavior)
 uv run python xtgen.py resources/examples/counter.yml
 
@@ -87,7 +125,7 @@ project.generate()
 
 Generated projects are ready to compile:
 
-```bash
+```sh
 # For PureData projects
 make -C build/counter
 
@@ -99,19 +137,19 @@ make -C build/counter
 
 ### Running Tests
 
-```bash
+```sh
 uv run pytest tests/ -v
 ```
 
 ### Type Checking
 
-```bash
+```sh
 uv run mypy xtgen.py tests/
 ```
 
 ### Linting and Formatting
 
-```bash
+```sh
 uv run ruff check xtgen.py tests/
 uv run ruff format xtgen.py tests/
 ```
@@ -242,6 +280,7 @@ externals:
 
 ### Future Enhancements
 
+- [ ] xtgen to become a python package
 - [ ] Hybrid dual Max/PD template
 - [ ] Additional DSP utility functions
 - [ ] Extended help file generation for PureData

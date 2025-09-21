@@ -35,6 +35,7 @@ from xtgen import (
     create_argument_parser,
     validate_specification,
     list_examples,
+    YAML_AVAILABLE,
 )
 
 
@@ -729,6 +730,64 @@ class TestCommandLineInterface:
             list_examples()
         except Exception as e:
             pytest.fail(f"list_examples() raised an exception: {e}")
+
+    def test_yaml_availability_in_parser(self) -> None:
+        """Test that argument parser reflects YAML availability."""
+        parser = create_argument_parser()
+
+        if YAML_AVAILABLE:
+            assert "YAML or JSON" in parser.description
+            assert ".yml, .yaml" in parser.epilog
+        else:
+            assert "JSON specifications" in parser.description
+            assert "PyYAML" in parser.epilog
+            assert "pip install PyYAML" in parser.epilog
+
+    def test_yaml_file_handling_when_unavailable(self, temp_dir: str) -> None:
+        """Test handling of YAML files when YAML is not available."""
+        import unittest.mock
+
+        # Create a test YAML file
+        yaml_content = """
+externals:
+  - name: test
+    params: []
+    outlets: []
+"""
+        yaml_file = Path(temp_dir) / "test.yml"
+        yaml_file.write_text(yaml_content)
+
+        # Mock YAML_AVAILABLE to False
+        with unittest.mock.patch('xtgen.YAML_AVAILABLE', False):
+            project = PdProject(yaml_file)
+
+            # Should raise an error when trying to load YAML file
+            with pytest.raises(ValueError, match="YAML files are not supported"):
+                project.load_specification()
+
+    def test_json_fallback_when_yaml_unavailable(self, temp_dir: str) -> None:
+        """Test that JSON files work even when YAML is unavailable."""
+        import unittest.mock
+
+        # Create a test JSON file
+        json_content = """{
+    "externals": [{
+        "name": "test",
+        "params": [],
+        "outlets": []
+    }]
+}"""
+        json_file = Path(temp_dir) / "test.json"
+        json_file.write_text(json_content)
+
+        # Mock YAML_AVAILABLE to False
+        with unittest.mock.patch('xtgen.YAML_AVAILABLE', False):
+            project = PdProject(json_file)
+
+            # Should work fine with JSON
+            spec = project.load_specification()
+            assert spec is not None
+            assert "externals" in spec
 
     @pytest.fixture
     def temp_dir(self) -> TypingGenerator[str, None, None]:

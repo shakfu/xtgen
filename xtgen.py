@@ -84,7 +84,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 
-import yaml
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+
 from mako.template import Template
 from mako.lookup import TemplateLookup
 
@@ -891,29 +896,42 @@ class Generator:
         try:
             with open(self.spec_file, 'r', encoding='utf-8') as f:
                 if file_extension in ['.yml', '.yaml']:
+                    if not YAML_AVAILABLE:
+                        raise ValueError(
+                            "YAML files are not supported. PyYAML package is not installed. "
+                            "Install with: pip install PyYAML"
+                        )
                     return yaml.safe_load(f.read())
                 elif file_extension == '.json':
                     return json.load(f)
                 else:
-                    # Try YAML first, then JSON as fallback
+                    # Try YAML first (if available), then JSON as fallback
                     content = f.read()
-                    try:
-                        return yaml.safe_load(content)
-                    except yaml.YAMLError:
+                    if YAML_AVAILABLE:
                         try:
-                            return json.loads(content)
-                        except json.JSONDecodeError as json_err:
-                            raise ValueError(
-                                f"File {self.spec_file} is neither valid YAML nor JSON. "
-                                f"JSON error: {json_err}. "
-                                f"Supported extensions: .yml, .yaml, .json"
-                            )
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML syntax in {self.spec_file}: {e}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON syntax in {self.spec_file}: {e}")
+                            return yaml.safe_load(content)
+                        except yaml.YAMLError:
+                            pass
+
+                    try:
+                        return json.loads(content)
+                    except json.JSONDecodeError as json_err:
+                        supported_exts = ".json"
+                        if YAML_AVAILABLE:
+                            supported_exts = ".yml, .yaml, .json"
+                        raise ValueError(
+                            f"File {self.spec_file} is not valid JSON"
+                            f"{' or YAML' if YAML_AVAILABLE else ''}. "
+                            f"JSON error: {json_err}. "
+                            f"Supported extensions: {supported_exts}"
+                        )
         except Exception as e:
-            raise ValueError(f"Error reading specification file {self.spec_file}: {e}")
+            if YAML_AVAILABLE and hasattr(e, '__class__') and 'yaml' in str(e.__class__).lower():
+                raise ValueError(f"Invalid YAML syntax in {self.spec_file}: {e}")
+            elif isinstance(e, json.JSONDecodeError):
+                raise ValueError(f"Invalid JSON syntax in {self.spec_file}: {e}")
+            else:
+                raise
 
     def generate(self) -> None:
         """Generate the external project. Override this in subclasses."""
@@ -1163,11 +1181,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
     Returns:
         Configured ArgumentParser instance
     """
-    parser = argparse.ArgumentParser(
-        prog="xtgen",
-        description="Generate PureData and Max/MSP external projects from YAML or JSON specifications",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+    # Build description and examples based on YAML availability
+    if YAML_AVAILABLE:
+        description = "Generate PureData and Max/MSP external projects from YAML or JSON specifications"
+        examples = """
 Examples:
   %(prog)s counter.yml                    # Generate PD project from YAML
   %(prog)s counter.json                   # Generate PD project from JSON
@@ -1178,9 +1195,28 @@ Examples:
 
 Supported file formats:
   .yml, .yaml  - YAML specification files
+  .json        - JSON specification files"""
+    else:
+        description = "Generate PureData and Max/MSP external projects from JSON specifications"
+        examples = """
+Examples:
+  %(prog)s counter.json                   # Generate PD project from JSON
+  %(prog)s -t max counter.json            # Generate Max/MSP project
+  %(prog)s -o /tmp/build counter.json     # Custom output directory
+  %(prog)s -v counter.json                # Verbose output
+  %(prog)s --list-examples                # List available examples
+
+Supported file formats:
   .json        - JSON specification files
-  other        - Auto-detected (tries YAML first, then JSON)
-        """,
+
+Note: YAML support is not available. Install PyYAML to enable YAML file support:
+  pip install PyYAML"""
+
+    parser = argparse.ArgumentParser(
+        prog="xtgen",
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=examples
     )
 
     # Positional argument for specification file
