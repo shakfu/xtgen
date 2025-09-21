@@ -115,13 +115,13 @@ When xtgen is installed as a package:
 
 ```sh
 # Generate PureData project (default behavior)
-xtgen resources/examples/counter.yml
+python -m xtgen resources/examples/counter.yml
 
 # Generate Max/MSP project
-xtgen -t max resources/examples/counter.json
+python -m xtgen -t max resources/examples/counter.json
 
 # Use custom output directory
-xtgen -o /tmp/my-externals counter.yml
+python -m xtgen -o /tmp/my-externals counter.yml
 ```
 
 #### CLI Options
