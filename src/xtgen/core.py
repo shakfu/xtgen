@@ -154,8 +154,7 @@ class AudioTypeError(ValueError):
 
 
 class TypeMapper:
-    """
-    Handles mapping between audio types and C code representations.
+    """Handles mapping between audio types and C code representations.
 
     This class provides static mappings from audio-specific type names
     to their corresponding C language representations and PureData API constants.
@@ -188,8 +187,7 @@ class TypeMapper:
 
     @classmethod
     def get_pd_mapping(cls, type_name: str) -> str:
-        """
-        Get PureData API constant for a given audio type.
+        """Get PureData API constant for a given audio type.
 
         Args:
             type_name: Audio type name (e.g., 'float', 'symbol', 'anything')
@@ -208,8 +206,7 @@ class TypeMapper:
 
     @classmethod
     def get_func_arg(cls, type_name: str) -> str:
-        """
-        Get C function argument string for a given audio type.
+        """Get C function argument string for a given audio type.
 
         Args:
             type_name: Audio type name (e.g., 'float', 'symbol', 'anything')
@@ -229,8 +226,7 @@ class TypeMapper:
 
 @dataclass
 class ArgumentBuilder:
-    """
-    Builds C function arguments for various external components.
+    """Builds C function arguments for various external components.
 
     This class constructs proper C function signatures and argument lists
     for external constructors, type methods, and message methods. It handles
@@ -252,8 +248,7 @@ class ArgumentBuilder:
     type_mapper: TypeMapper
 
     def __init__(self, type_mapper: TypeMapper) -> None:
-        """
-        Initialize ArgumentBuilder with a TypeMapper instance.
+        """Initialize ArgumentBuilder with a TypeMapper instance.
 
         Args:
             type_mapper: TypeMapper instance for type conversions
@@ -261,8 +256,7 @@ class ArgumentBuilder:
         self.type_mapper = type_mapper
 
     def build_constructor_args(self, args: List["Param"]) -> str:
-        """
-        Build C constructor arguments for external creation.
+        """Build C constructor arguments for external creation.
 
         Constructs the argument list for the external's constructor function,
         handling PureData's limitation of 6 typed arguments before falling
@@ -287,8 +281,7 @@ class ArgumentBuilder:
             return "t_symbol *s, int argc, t_atom *argv"
 
     def build_type_signature(self, args: List["Param"]) -> str:
-        """
-        Build PureData class type signature for registration.
+        """Build PureData class type signature for registration.
 
         Creates the type signature string used in class_new() calls to
         register the external with PureData's type system.
@@ -313,8 +306,7 @@ class ArgumentBuilder:
             return "A_GIMME" + suffix
 
     def build_method_args(self, external_type: str, params: List[str]) -> str:
-        """
-        Build C function arguments for message methods.
+        """Build C function arguments for message methods.
 
         Constructs argument lists for message method functions, always
         including the external instance pointer as the first argument.
@@ -342,8 +334,7 @@ class ArgumentBuilder:
 
 @dataclass
 class CodeGenerator:
-    """
-    Generates C code snippets for external components.
+    """Generates C code snippets for external components.
 
     This class creates specific C code fragments used in audio external
     generation, focusing on PureData API calls for method registration,
@@ -367,8 +358,7 @@ class CodeGenerator:
     arg_builder: ArgumentBuilder
 
     def __init__(self, type_mapper: TypeMapper, arg_builder: ArgumentBuilder) -> None:
-        """
-        Initialize CodeGenerator with required helper instances.
+        """Initialize CodeGenerator with required helper instances.
 
         Args:
             type_mapper: TypeMapper instance for type conversions
@@ -380,8 +370,7 @@ class CodeGenerator:
     def generate_class_addmethod(
         self, external_name: str, method_name: str, method_type: str
     ) -> str:
-        """
-        Generate class_add method call for type methods.
+        """Generate class_add method call for type methods.
 
         Creates the appropriate class_add* call for registering type-specific
         methods (bang, float, symbol, etc.) with PureData's class system.
@@ -399,8 +388,7 @@ class CodeGenerator:
     def generate_message_addmethod(
         self, external_name: str, method_name: str, params: List[str]
     ) -> str:
-        """
-        Generate class_addmethod call for message methods.
+        """Generate class_addmethod call for message methods.
 
         Creates the class_addmethod call for registering custom message
         methods with PureData, handling parameter type mapping and
@@ -434,8 +422,7 @@ class CodeGenerator:
     def generate_creator_call(
         self, external_name: str, alias: Optional[str], type_signature: str
     ) -> str:
-        """
-        Generate class_addcreator call for external alias.
+        """Generate class_addcreator call for external alias.
 
         Creates the class_addcreator call for registering an alternative
         name (alias) for the external, allowing users to instantiate
@@ -856,8 +843,7 @@ class Generator:
     def __init__(
         self, spec_file: Union[str, Path], target_dir: str = OUTPUT_DIR
     ) -> None:
-        """
-        Initialize generator with specification file and target directory.
+        """Initialize generator with specification file and target directory.
 
         Args:
             spec_file: Path to YAML or JSON specification file
@@ -872,8 +858,7 @@ class Generator:
         self.model: Optional[External] = None
 
     def cmd(self, command_args: List[str]) -> str:
-        """
-        Execute command safely using subprocess.
+        """Execute command safely using subprocess.
 
         Args:
             command_args: List of command arguments to execute
@@ -895,8 +880,7 @@ class Generator:
             raise
 
     def load_specification(self) -> Dict[str, Any]:
-        """
-        Load and parse specification file (YAML or JSON).
+        """Load and parse specification file (YAML or JSON).
 
         Returns:
             Parsed specification data as dictionary
@@ -955,8 +939,7 @@ class Generator:
         raise NotImplementedError("Subclasses must implement generate()")
 
     def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
-        """
-        Validate specification structure and required fields.
+        """Validate specification structure and required fields.
 
         Args:
             spec_data: Parsed specification data (YAML or JSON) to validate
@@ -1014,8 +997,7 @@ class Generator:
         return True
 
     def render(self, template: str, outfile: Optional[str] = None) -> None:
-        """
-        Render a template file with specification data and write output.
+        """Render a template file with specification data and write output.
 
         This method handles the complete rendering pipeline:
         1. Load and validate specification (YAML or JSON)
@@ -1081,8 +1063,7 @@ class Generator:
 
 
 class MaxProject(Generator):
-    """
-    Generator for Max/MSP external projects.
+    """Generator for Max/MSP external projects.
 
     This class specializes the base Generator for creating Max/MSP externals,
     handling the specific templates and file structure required for Max/MSP.
@@ -1094,8 +1075,7 @@ class MaxProject(Generator):
     """
 
     def generate(self) -> None:
-        """
-        Generate Max/MSP external project with all required files.
+        """Generate Max/MSP external project with all required files.
 
         Creates the project directory and renders the appropriate templates
         for Max/MSP externals, including support for both regular and DSP externals.
@@ -1128,8 +1108,7 @@ class MaxProject(Generator):
 
 
 class PdProject(Generator):
-    """
-    Generator for PureData external projects.
+    """Generator for PureData external projects.
 
     This class specializes the base Generator for creating PureData externals,
     handling the specific templates, Makefiles, and file structure required for PD.
@@ -1141,8 +1120,7 @@ class PdProject(Generator):
     """
 
     def generate(self) -> None:
-        """
-        Generate PureData external project with all required files.
+        """Generate PureData external project with all required files.
 
         Creates the project directory and renders the appropriate templates
         for PureData externals, including Makefiles and support files.
@@ -1192,8 +1170,7 @@ class PdProject(Generator):
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
-    """
-    Create and configure the command-line argument parser.
+    """Create and configure the command-line argument parser.
 
     Returns:
         Configured ArgumentParser instance
@@ -1320,8 +1297,7 @@ def list_examples() -> None:
 
 
 def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
-    """
-    Validate a specification file without generating output.
+    """Validate a specification file without generating output.
 
     Args:
         spec_file: Path to specification file
@@ -1367,8 +1343,7 @@ def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
 
 
 def main() -> int:
-    """
-    Main entry point for the command-line interface.
+    """Main entry point for the command-line interface.
 
     Returns:
         Exit code (0 for success, 1 for error)
