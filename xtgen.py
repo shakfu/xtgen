@@ -1,78 +1,77 @@
 #!/usr/bin/env python3
 """xtgen.py
 
-A tool to generate skeleton puredata or max external files.
+A modern, type-safe tool to generate skeleton PureData and Max/MSP external files.
 
-Requires the following python packages:
+This module provides a complete code generation system for audio externals using:
+- YAML-based external specifications
+- Mako templating system
+- Dataclass-based object model with proper validation
+- Focused helper classes for maintainable code generation
 
-- mako
-- pyyaml
+## Quick Start
 
-## Example of Usage
+>>> from xtgen import PdProject, MaxProject
+>>>
+>>> # Generate PureData external
+>>> pd_project = PdProject('counter.yml')
+>>> pd_project.generate()
+>>>
+>>> # Generate Max/MSP external
+>>> max_project = MaxProject('counter.yml')
+>>> max_project.generate()
 
->>> import xtgen
+## Architecture
 
->>> xtgen.PdProject('counter.yml').generate()
->>> # generates a regular c pd external skeleton
+The system is built with focused, single-responsibility classes:
 
->>> xtgen.PdProject('counter~.yml').generate()
->>> # generates an audio dsp pd external
+- `External`: Main external representation with metadata and components
+- `TypeMapper`: Handles mapping between audio types and C code
+- `ArgumentBuilder`: Builds C function arguments for various components
+- `CodeGenerator`: Generates C code snippets and method calls
+- `TypeMethod`: Represents type-based methods (bang, float, etc.)
+- `MessageMethod`: Represents named message methods
+- `Param`: Represents external parameters with validation
+- `Outlet`: Represents external outlets
 
->>> xtgen.MaxProject('counter.yml').generate()
->>> ... (similar as above)
+## YAML External Specification
 
-## Model
-
-external
-    namespace
-    name
-    prefix
-    meta
-        desc
-        author
-        repo
-    params
-    inlets
-    outlets
-    typed_methods
-    message_methods
-    dsp_methods
-
-
-
+```yaml
 externals:
+  - namespace: my
+    name: counter
+    prefix: ctr
+    alias: cntr
+    help: help-counter
+    n_channels: 1
+
+    params:
+      - name: step
+        type: float
+        initial: 1.0
+        arg: true
+        inlet: true
+        desc: "increment step size"
+
+    outlets:
+      - name: count
+        type: float
 
     message_methods:
       - name: reset
         params: []
-        doc: reset count to zero
-
-      - name: bound
-        params: [float, float]
-        doc: set (or reset) lower and uppwer boundary of counter
-
-      - name: step
-        params: [float]
-        doc: set the counter increment per step
+        doc: "reset counter to zero"
 
     type_methods:
       - type: bang
-        doc: each bang increments the counter
+        doc: "increment and output counter"
 
-      - type: float
-        doc: each number is printed out
-
-      - type: symbol
-        doc: each symbol is printed out
-
-      - type: pointer
-        doc: each pointer is printed out
-
-      - type: list
-        doc: each list is printed out
-
-      - type: anything
-        doc: enything is printed out
+    meta:
+      desc: "A simple counter external"
+      author: "Your Name"
+      repo: "https://github.com/yourname/counter"
+      features: ["counting", "resettable"]
+```
 
 """
 import argparse
@@ -121,6 +120,136 @@ def lookup_routine(symbol: str) -> str:
 class AudioTypeError(ValueError):
     """Custom exception for audio type validation errors."""
     pass
+
+
+# ----------------------------------------------------------------------------
+# HELPER CLASSES FOR EXTERNAL GENERATION
+
+
+@dataclass
+class TypeMapper:
+    """Handles mapping between audio types and C code representations."""
+
+    # Type mappings for PureData API
+    TYPE_MAPPINGS = {
+        "float": "A_DEFFLOAT",
+        "symbol": "A_DEFSYMBOL",
+        "anything": "A_GIMME",
+    }
+
+    FUNC_TYPE_ARGS = {
+        "float": "t_floatarg f",
+        "symbol": "t_symbol *s",
+        "anything": "t_symbol *s, int argc, t_atom *argv",
+    }
+
+    @classmethod
+    def get_pd_mapping(cls, type_name: str) -> str:
+        """Get PureData type mapping for a given type."""
+        if type_name not in cls.TYPE_MAPPINGS:
+            raise AudioTypeError(f"Unknown type mapping for '{type_name}'. Valid types: {list(cls.TYPE_MAPPINGS.keys())}")
+        return cls.TYPE_MAPPINGS[type_name]
+
+    @classmethod
+    def get_func_arg(cls, type_name: str) -> str:
+        """Get C function argument for a given type."""
+        if type_name not in cls.FUNC_TYPE_ARGS:
+            raise AudioTypeError(f"Unknown function argument type '{type_name}'. Valid types: {list(cls.FUNC_TYPE_ARGS.keys())}")
+        return cls.FUNC_TYPE_ARGS[type_name]
+
+
+@dataclass
+class ArgumentBuilder:
+    """Builds C function arguments for various external components."""
+
+    def __init__(self, type_mapper: TypeMapper):
+        self.type_mapper = type_mapper
+
+    def build_constructor_args(self, args: List['Param']) -> str:
+        """Build C constructor arguments for external creation."""
+        if len(args) == 0:
+            return "void"
+        elif 0 < len(args) <= 6:
+            type_args = []
+            for i, arg in enumerate(args):
+                func_arg = self.type_mapper.get_func_arg(arg.type)
+                type_args.append(func_arg + str(i))
+            return ", ".join(type_args)
+        else:
+            # Use A_GIMME for many arguments
+            return "t_symbol *s, int argc, t_atom *argv"
+
+    def build_type_signature(self, args: List['Param']) -> str:
+        """Build PureData class type signature."""
+        suffix = ", 0"
+
+        if len(args) == 0:
+            return suffix
+        elif 0 < len(args) <= 6:
+            mappings = []
+            for arg in args:
+                mapping = self.type_mapper.get_pd_mapping(arg.type)
+                mappings.append(mapping)
+            return ", ".join(mappings) + suffix
+        else:
+            return "A_GIMME" + suffix
+
+    def build_method_args(self, external_type: str, params: List[str]) -> str:
+        """Build C function arguments for message methods."""
+        base_arg = f"{external_type} *x"
+
+        if len(params) == 0:
+            return base_arg
+        elif params == ["list"] or len(params) > 6:
+            return f"{base_arg}, t_symbol *s, int argc, t_atom *argv"
+        else:
+            type_args = []
+            for i, param_type in enumerate(params):
+                func_arg = self.type_mapper.get_func_arg(param_type)
+                type_args.append(func_arg + str(i))
+            return f"{base_arg}, {', '.join(type_args)}"
+
+
+@dataclass
+class CodeGenerator:
+    """Generates C code snippets for external components."""
+
+    def __init__(self, type_mapper: TypeMapper, arg_builder: ArgumentBuilder):
+        self.type_mapper = type_mapper
+        self.arg_builder = arg_builder
+
+    def generate_class_addmethod(self, external_name: str, method_name: str, method_type: str) -> str:
+        """Generate class_add method call for type methods."""
+        return f"class_add{method_type}({external_name}_class, {external_name}_{method_type})"
+
+    def generate_message_addmethod(self, external_name: str, method_name: str, params: List[str]) -> str:
+        """Generate class_addmethod call for message methods."""
+        prefix = (
+            f"class_addmethod({external_name}_class, "
+            f"(t_method){external_name}_{method_name}, "
+            f'gensym("{method_name}")'
+        )
+
+        if len(params) == 0:
+            return f"{prefix}, 0)"
+        elif params == ["list"] or len(params) > 6:
+            return f"{prefix}, A_GIMME, 0)"
+        else:
+            mappings = []
+            for param_type in params:
+                mapping = self.type_mapper.get_pd_mapping(param_type)
+                mappings.append(mapping)
+            return f"{prefix}, {', '.join(mappings)}, 0)"
+
+    def generate_creator_call(self, external_name: str, alias: str, type_signature: str) -> str:
+        """Generate class_addcreator call for external alias."""
+        if not alias or alias == external_name:
+            return ""  # No alias needed
+        return (
+            f"class_addcreator((t_newmethod)"
+            f'{external_name}_new, gensym("{alias}"), '
+            f"{type_signature})"
+        )
 
 
 @dataclass
@@ -227,23 +356,27 @@ class TypeMethod:
         """Generate C function arguments for this type method."""
         base_arg = f"{self.parent.type} *x"
 
-        if self.type == "bang":
-            return base_arg
-        elif self.type in ["float", "int"]:
-            return f"{base_arg}, t_floatarg f"
-        elif self.type == "symbol":
-            return f"{base_arg}, t_symbol *s"
-        elif self.type == "pointer":
-            return f"{base_arg}, t_gpointer *pt"
-        elif self.type in ["list", "anything"]:
-            return f"{base_arg}, t_symbol *s, int argc, t_atom *argv"
-        else:
+        type_args_map = {
+            "bang": "",
+            "float": ", t_floatarg f",
+            "int": ", t_floatarg f",
+            "symbol": ", t_symbol *s",
+            "pointer": ", t_gpointer *pt",
+            "list": ", t_symbol *s, int argc, t_atom *argv",
+            "anything": ", t_symbol *s, int argc, t_atom *argv"
+        }
+
+        if self.type not in type_args_map:
             raise AudioTypeError(f"Argument generation not implemented for type '{self.type}'")
+
+        return base_arg + type_args_map[self.type]
 
     @property
     def class_addmethod(self) -> str:
         """Generate class_add method call for this type."""
-        return f"class_add{self.type}({self.parent.klass}, {self.parent.name}_{self.type})"
+        return self.parent.code_generator.generate_class_addmethod(
+            self.parent.name, self.name, self.type
+        )
 
 
 @dataclass
@@ -257,42 +390,14 @@ class MessageMethod:
     @property
     def args(self) -> str:
         """Generate C function arguments for this message method."""
-        base_arg = f"{self.parent.type} *x"
-
-        if len(self.params) == 0:
-            return base_arg
-        elif self.params == ["list"] or len(self.params) > 6:
-            return f"{base_arg}, t_symbol *s, int argc, t_atom *argv"
-        else:
-            type_args = []
-            for i, param_type in enumerate(self.params):
-                if param_type not in self.parent.func_type_args:
-                    raise AudioTypeError(f"Unknown parameter type '{param_type}' in method '{self.name}'")
-                type_args.append(self.parent.func_type_args[param_type] + str(i))
-            type_str = ", ".join(type_args)
-            return f"{base_arg}, {type_str}"
+        return self.parent.arg_builder.build_method_args(self.parent.type, self.params)
 
     @property
     def class_addmethod(self) -> str:
         """Generate class_addmethod call for this message method."""
-        prefix = (
-            f"class_addmethod({self.parent.name}_class, "
-            f"(t_method){self.parent.name}_{self.name}, "
-            f'gensym("{self.name}")'
+        return self.parent.code_generator.generate_message_addmethod(
+            self.parent.name, self.name, self.params
         )
-
-        if len(self.params) == 0:
-            return f"{prefix}, 0)"
-        elif self.params == ["list"] or len(self.params) > 6:
-            return f"{prefix}, A_GIMME, 0)"
-        else:
-            type_mappings = []
-            for param_type in self.params:
-                if param_type not in self.parent.mapping:
-                    raise AudioTypeError(f"Unknown parameter mapping for type '{param_type}' in method '{self.name}'")
-                type_mappings.append(self.parent.mapping[param_type])
-            type_str = ", ".join(type_mappings)
-            return f"{prefix}, {type_str}, 0)"
 
 
 @dataclass
@@ -364,23 +469,20 @@ class External:
     type_methods_data: List[Dict[str, Any]] = field(default_factory=list)
     meta: Optional[Dict[str, Any]] = None
 
-    # Class constants
-    MAPPING = {
-        "float": "A_DEFFLOAT",
-        "symbol": "A_DEFSYMBOL",
-        "anything": "A_GIMME",
-    }
-
-    FUNC_TYPE_ARGS = {
-        "float": "t_floatarg f",
-        "symbol": "t_symbol *s",
-        "anything": "t_symbol *s, int argc, t_atom *argv",
-    }
+    # Helper components (initialized in __post_init__)
+    type_mapper: TypeMapper = field(init=False)
+    arg_builder: ArgumentBuilder = field(init=False)
+    code_generator: CodeGenerator = field(init=False)
 
     def __post_init__(self):
         # Set defaults
         if self.alias is None:
             self.alias = self.name
+
+        # Initialize helper components
+        self.type_mapper = TypeMapper()
+        self.arg_builder = ArgumentBuilder(self.type_mapper)
+        self.code_generator = CodeGenerator(self.type_mapper, self.arg_builder)
 
     @property
     def type(self) -> str:
@@ -392,15 +494,16 @@ class External:
         """Get the C class name for this external."""
         return f"{self.name}_class"
 
+    # Backward compatibility properties
     @property
     def mapping(self) -> Dict[str, str]:
         """Get type mappings (for backward compatibility)."""
-        return self.MAPPING
+        return self.type_mapper.TYPE_MAPPINGS
 
     @property
     def func_type_args(self) -> Dict[str, str]:
         """Get function type arguments (for backward compatibility)."""
-        return self.FUNC_TYPE_ARGS
+        return self.type_mapper.FUNC_TYPE_ARGS
 
     @property
     def param_objects(self) -> List[Param]:
@@ -458,47 +561,18 @@ class External:
     @property
     def class_new_args(self) -> str:
         """Generate C function arguments for the external constructor."""
-        args = self.args
-        if len(args) == 0:
-            return "void"
-        elif 0 < len(args) <= 6:
-            type_args = []
-            for i, arg in enumerate(args):
-                if arg.type not in self.func_type_args:
-                    raise AudioTypeError(f"Unknown argument type '{arg.type}' for external '{self.name}'")
-                type_args.append(self.func_type_args[arg.type] + str(i))
-            return ", ".join(type_args)
-        else:
-            # Use A_GIMME for many arguments
-            return "t_symbol *s, int argc, t_atom *argv"
+        return self.arg_builder.build_constructor_args(self.args)
 
     @property
     def class_type_signature(self) -> str:
         """Generate PureData class type signature."""
-        args = self.args
-        suffix = ", 0"
-
-        if len(args) == 0:
-            return suffix
-        elif 0 < len(args) <= 6:
-            type_mappings = []
-            for arg in args:
-                if arg.type not in self.mapping:
-                    raise AudioTypeError(f"Unknown type mapping for '{arg.type}' in external '{self.name}'")
-                type_mappings.append(self.mapping[arg.type])
-            return ", ".join(type_mappings) + suffix
-        else:
-            return "A_GIMME" + suffix
+        return self.arg_builder.build_type_signature(self.args)
 
     @property
     def class_addcreator(self) -> str:
         """Generate class_addcreator call for alias."""
-        if not self.alias or self.alias == self.name:
-            return ""  # No alias needed
-        return (
-            f"class_addcreator((t_newmethod)"
-            f'{self.name}_new, gensym("{self.alias}"), '
-            f"{self.class_type_signature})"
+        return self.code_generator.generate_creator_call(
+            self.name, self.alias, self.class_type_signature
         )
 
     # Backward compatibility properties for templates

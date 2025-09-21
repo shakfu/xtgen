@@ -18,7 +18,8 @@ import os
 
 from xtgen import (
     ScalarType, CompoundType, External, TypeMethod, MessageMethod,
-    Param, Outlet, PdProject, MaxProject, Generator, AudioTypeError
+    Param, Outlet, PdProject, MaxProject, Generator, AudioTypeError,
+    TypeMapper, ArgumentBuilder, CodeGenerator
 )
 
 
@@ -334,6 +335,75 @@ externals:
         assert "t_float value" in content  # parameter
         assert "t_outlet *out_out" in content  # outlet
         assert "A test object" in content  # description from meta
+
+
+class TestHelperClasses:
+    """Test the new focused helper classes."""
+
+    def test_type_mapper(self):
+        """Test TypeMapper functionality."""
+        mapper = TypeMapper()
+
+        # Test valid mappings
+        assert mapper.get_pd_mapping("float") == "A_DEFFLOAT"
+        assert mapper.get_func_arg("float") == "t_floatarg f"
+
+        # Test invalid types
+        with pytest.raises(AudioTypeError):
+            mapper.get_pd_mapping("invalid_type")
+
+        with pytest.raises(AudioTypeError):
+            mapper.get_func_arg("invalid_type")
+
+    def test_argument_builder(self):
+        """Test ArgumentBuilder functionality."""
+        mapper = TypeMapper()
+        builder = ArgumentBuilder(mapper)
+
+        # Test empty args
+        assert builder.build_constructor_args([]) == "void"
+
+        # Test type signature
+        assert builder.build_type_signature([]) == ", 0"
+
+    def test_code_generator(self):
+        """Test CodeGenerator functionality."""
+        mapper = TypeMapper()
+        builder = ArgumentBuilder(mapper)
+        generator = CodeGenerator(mapper, builder)
+
+        # Test method generation
+        method_call = generator.generate_class_addmethod("test", "bang", "bang")
+        assert "class_addbang" in method_call
+        assert "test_class" in method_call
+
+        # Test message method generation
+        message_call = generator.generate_message_addmethod("test", "reset", [])
+        assert "class_addmethod" in message_call
+        assert "reset" in message_call
+
+    def test_helper_integration(self):
+        """Test that helper classes work together correctly."""
+        # Create a simple external to test integration
+        external_data = {
+            "name": "test",
+            "namespace": "test",
+            "params_data": [],
+            "outlets_data": [],
+            "message_methods_data": [],
+            "type_methods_data": []
+        }
+
+        external = External(**external_data)
+
+        # Test that helper objects are created
+        assert external.type_mapper is not None
+        assert external.arg_builder is not None
+        assert external.code_generator is not None
+
+        # Test that they work
+        assert external.class_new_args == "void"
+        assert external.class_type_signature == ", 0"
 
 
 class TestErrorHandling:
