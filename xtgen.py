@@ -77,6 +77,8 @@ externals:
 """
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -425,26 +427,98 @@ class Generator:
         self.project_path = self.target_dir / self.fullname
         self.model = None
 
-    def cmd(self, shell, *args, **kwds):
-        os.system(shell.format(*args, **kwds))
+    def cmd(self, command_args):
+        """Execute command safely using subprocess."""
+        try:
+            result = subprocess.run(command_args, check=True, capture_output=True, text=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            print(f"Command failed: {' '.join(command_args)}")
+            print(f"Error: {e.stderr}")
+            raise
 
     def generate(self):
         """override this"""
 
-    def render(self, template, outfile=None):
-        with open(self.spec_yml) as f:
-            yml = yaml.safe_load(f.read())
-            ext_yml = yml["externals"][0]
+    def validate_yaml_structure(self, yml_data):
+        """Validate YAML structure and required fields."""
+        if not isinstance(yml_data, dict):
+            raise ValueError("YAML file must contain a dictionary")
 
-        templ = Template(filename=os.path.join(TEMPLATE_DIR, template))
-        self.model = external = External(**ext_yml)
-        rendered = str(templ.render(e=external))
+        if "externals" not in yml_data:
+            raise ValueError("YAML file must contain 'externals' key")
+
+        if not isinstance(yml_data["externals"], list) or len(yml_data["externals"]) == 0:
+            raise ValueError("'externals' must be a non-empty list")
+
+        ext = yml_data["externals"][0]
+        required_fields = ["name", "namespace"]
+        for field in required_fields:
+            if field not in ext:
+                raise ValueError(f"External must contain required field: '{field}'")
+
+        # Validate optional fields have correct types
+        if "params" in ext and not isinstance(ext["params"], list):
+            raise ValueError("'params' must be a list")
+
+        if "outlets" in ext and not isinstance(ext["outlets"], list):
+            raise ValueError("'outlets' must be a list")
+
+        if "message_methods" in ext and not isinstance(ext["message_methods"], list):
+            raise ValueError("'message_methods' must be a list")
+
+        if "type_methods" in ext and not isinstance(ext["type_methods"], list):
+            raise ValueError("'type_methods' must be a list")
+
+        # Validate parameter structures
+        for param in ext.get("params", []):
+            if not isinstance(param, dict):
+                raise ValueError("Each parameter must be a dictionary")
+            param_required = ["name", "type"]
+            for field in param_required:
+                if field not in param:
+                    raise ValueError(f"Parameter must contain required field: '{field}'")
+
+        return True
+
+    def render(self, template, outfile=None):
+        try:
+            with open(self.spec_yml) as f:
+                yml = yaml.safe_load(f.read())
+        except FileNotFoundError:
+            raise FileNotFoundError(f"YAML specification file not found: {self.spec_yml}")
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML syntax in {self.spec_yml}: {e}")
+
+        # Validate YAML structure
+        self.validate_yaml_structure(yml)
+        ext_yml = yml["externals"][0]
+
+        try:
+            templ = Template(filename=os.path.join(TEMPLATE_DIR, template))
+        except Exception as e:
+            raise ValueError(f"Template file not found or invalid: {template}: {e}")
+
+        try:
+            self.model = external = External(**ext_yml)
+        except Exception as e:
+            raise ValueError(f"Failed to create External object from YAML data: {e}")
+
+        try:
+            rendered = str(templ.render(e=external))
+        except Exception as e:
+            raise ValueError(f"Template rendering failed: {e}")
+
         if not outfile:
             outfile = self.fullname + ".c"
         target = self.project_path / outfile
-        with open(target, "w") as f:
-            f.write(rendered)
-        print(target, "rendered")
+
+        try:
+            with open(target, "w") as f:
+                f.write(rendered)
+            print(target, "rendered")
+        except Exception as e:
+            raise ValueError(f"Failed to write output file {target}: {e}")
 
 
 class MaxProject(Generator):
@@ -454,9 +528,11 @@ class MaxProject(Generator):
         try:
             Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
-        except OSError:
-            print(f"{self.project_path} already exists")
-            return
+        except OSError as e:
+            if self.project_path.exists():
+                print(f"Warning: {self.project_path} already exists, files may be overwritten")
+            else:
+                raise OSError(f"Failed to create project directory {self.project_path}: {e}")
 
         if self.is_dsp:
             self.render("mx/dsp-external.cpp.mako")
@@ -473,11 +549,16 @@ class PdProject(Generator):
         try:
             Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
-        except OSError:
-            print(f"{self.project_path} already exists")
-            return
+        except OSError as e:
+            if self.project_path.exists():
+                print(f"Warning: {self.project_path} already exists, files may be overwritten")
+            else:
+                raise OSError(f"Failed to create project directory {self.project_path}: {e}")
 
-        self.cmd(f"cp -rf resources/pd/Makefile.pdlibbuilder {self.project_path}")
+        # Copy pdlibbuilder Makefile safely
+        src_makefile = Path("resources/pd/Makefile.pdlibbuilder")
+        dst_makefile = self.project_path / "Makefile.pdlibbuilder"
+        shutil.copy2(src_makefile, dst_makefile)
         if self.is_dsp:
             self.render("pd/dsp-external.c.mako")
         else:
