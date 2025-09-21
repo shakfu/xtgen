@@ -17,8 +17,8 @@ import yaml
 import os
 
 from xtgen import (
-    ScalarType, CompoundType, External, TypeMethod, MessagedMethod,
-    Param, Outlet, PdProject, MaxProject, Generator
+    ScalarType, CompoundType, External, TypeMethod, MessageMethod,
+    Param, Outlet, PdProject, MaxProject, Generator, AudioTypeError
 )
 
 
@@ -33,8 +33,8 @@ class TestTypeSystem:
             assert str(scalar) == valid_type
 
     def test_scalar_type_invalid_type(self):
-        """Test ScalarType with invalid type raises assertion."""
-        with pytest.raises(AssertionError):
+        """Test ScalarType with invalid type raises AudioTypeError."""
+        with pytest.raises(AudioTypeError):
             ScalarType("invalid_type")
 
     def test_scalar_type_properties(self):
@@ -59,7 +59,7 @@ class TestTypeSystem:
 
         # Test 'anything' type doesn't have c_type
         anything_type = CompoundType("anything")
-        with pytest.raises(AssertionError):
+        with pytest.raises(AudioTypeError):
             anything_type.c_type
 
 
@@ -74,7 +74,7 @@ class TestExternalModel:
             "name": "counter",
             "prefix": "ctr",
             "alias": "cntr",
-            "params": [
+            "params_data": [
                 {
                     "name": "step",
                     "type": "float",
@@ -86,18 +86,18 @@ class TestExternalModel:
                     "desc": "step size"
                 }
             ],
-            "outlets": [
+            "outlets_data": [
                 {"name": "f", "type": "float"},
                 {"name": "b", "type": "bang"}
             ],
-            "message_methods": [
+            "message_methods_data": [
                 {
                     "name": "reset",
                     "params": [],
                     "doc": "reset counter to zero"
                 }
             ],
-            "type_methods": [
+            "type_methods_data": [
                 {
                     "type": "bang",
                     "doc": "increment counter"
@@ -153,18 +153,18 @@ class TestMethodGeneration:
         return External(
             name="test",
             namespace="test",
-            message_methods=[
+            message_methods_data=[
                 {"name": "simple", "params": [], "doc": "simple method"},
                 {"name": "with_float", "params": ["float"], "doc": "method with float"},
                 {"name": "with_multiple", "params": ["float", "symbol"], "doc": "method with multiple params"}
             ],
-            type_methods=[
+            type_methods_data=[
                 {"type": "bang", "doc": "bang handler"},
                 {"type": "float", "doc": "float handler"},
                 {"type": "list", "doc": "list handler"}
             ],
-            params=[],
-            outlets=[]
+            params_data=[],
+            outlets_data=[]
         )
 
     def test_type_method_args(self, external_with_methods):
