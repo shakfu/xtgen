@@ -1,6 +1,6 @@
 # Makefile for xtgen
 
-.PHONY: test install clean dev-install
+.PHONY: test install wheel clean demo dev-install help
 
 # Run tests
 test:
@@ -9,6 +9,10 @@ test:
 # Install dependencies
 install:
 	@uv sync
+
+# Build Wheel
+wheel:
+	@uv build
 
 # Install with development dependencies
 dev-install:
