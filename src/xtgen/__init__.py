@@ -3,7 +3,8 @@
 A modern, type-safe tool to generate skeleton PureData and Max/MSP external files.
 """
 
-from .core import (
+# Import from new modular structure
+from .models import (
     ScalarType,
     CompoundType,
     External,
@@ -11,19 +12,28 @@ from .core import (
     MessageMethod,
     Param,
     Outlet,
-    PdProject,
-    MaxProject,
-    Generator,
     AudioTypeError,
+)
+from .generators import (
     TypeMapper,
     ArgumentBuilder,
     CodeGenerator,
+)
+from .templates import (
+    Generator,
+    PdProject,
+    MaxProject,
+    YAML_AVAILABLE,
+)
+from .cli import (
     main,
     create_argument_parser,
     validate_specification,
     list_examples,
-    YAML_AVAILABLE,
 )
+
+# Backward compatibility - also expose everything from core
+from .core import *
 
 __version__ = "0.1.2"
 

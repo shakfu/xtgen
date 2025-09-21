@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Generator as TypingGenerator
 import os
 
-from xtgen import (
+from xtgen.models import (
     ScalarType,
     CompoundType,
     External,
@@ -24,18 +24,41 @@ from xtgen import (
     MessageMethod,
     Param,
     Outlet,
-    PdProject,
-    MaxProject,
-    Generator,
     AudioTypeError,
+)
+from xtgen.generators import (
     TypeMapper,
     ArgumentBuilder,
     CodeGenerator,
+)
+from xtgen.templates import (
+    Generator,
+    PdProject,
+    MaxProject,
+    YAML_AVAILABLE,
+)
+from xtgen.cli import (
     main,
     create_argument_parser,
     validate_specification,
     list_examples,
-    YAML_AVAILABLE,
+)
+# Also import from core for backward compatibility
+from xtgen import (
+    ScalarType as CoreScalarType,
+    CompoundType as CoreCompoundType,
+    External as CoreExternal,
+    TypeMethod as CoreTypeMethod,
+    MessageMethod as CoreMessageMethod,
+    Param as CoreParam,
+    Outlet as CoreOutlet,
+    PdProject as CorePdProject,
+    MaxProject as CoreMaxProject,
+    Generator as CoreGenerator,
+    AudioTypeError as CoreAudioTypeError,
+    TypeMapper as CoreTypeMapper,
+    ArgumentBuilder as CoreArgumentBuilder,
+    CodeGenerator as CoreCodeGenerator,
 )
 
 try:
@@ -772,7 +795,7 @@ externals:
         yaml_file.write_text(yaml_content)
 
         # Mock YAML_AVAILABLE to False
-        with unittest.mock.patch('xtgen.core.YAML_AVAILABLE', False):
+        with unittest.mock.patch('xtgen.templates.YAML_AVAILABLE', False):
             project = PdProject(yaml_file)
 
             # Should raise an error when trying to load YAML file
@@ -795,7 +818,7 @@ externals:
         json_file.write_text(json_content)
 
         # Mock YAML_AVAILABLE to False
-        with unittest.mock.patch('xtgen.core.YAML_AVAILABLE', False):
+        with unittest.mock.patch('xtgen.templates.YAML_AVAILABLE', False):
             project = PdProject(json_file)
 
             # Should work fine with JSON
