@@ -1,9 +1,10 @@
 # xtgen
 
-A tool to generate skeleton PureData and Max/MSP external files from YAML or JSON specifications.
+A modern, type-safe Python package for generating skeleton PureData and Max/MSP external files from YAML or JSON specifications.
 
 ## Features
 
+- **Python package** with CLI entry point and library interface
 - **Command-line interface** with comprehensive options and validation
 - **Generate PureData external projects** with complete build system
 - **Generate Max/MSP external projects** with proper SDK structure
@@ -11,22 +12,37 @@ A tool to generate skeleton PureData and Max/MSP external files from YAML or JSO
 - **Type-safe specification parsing** (YAML and JSON formats)
 - **Automatic format detection** with intelligent fallback
 - **Validation mode** to check specifications without generating
-- **Comprehensive test coverage** (35 tests)
+- **Comprehensive test coverage** (38 tests)
 - **Support for both regular and DSP** (signal processing) externals
+- **Bundled resources** (templates, examples, headers included in package)
 
 ## Installation
 
-This project uses uv for dependency management. Install dependencies with:
+### From Source
+
+Clone this repository and install with uv:
 
 ```sh
+git clone <repository-url>
+cd xtgen
 uv sync
 ```
 
-Or install manually with pip:
+### From Wheel
+
+Build and install the package:
 
 ```sh
-pip install mako pyyaml
+uv build
+pip install dist/xtgen-*.whl
 ```
+
+### Dependencies
+
+The package requires:
+- Python 3.13+
+- Mako (templating engine)
+- PyYAML (YAML parsing)
 
 ## Usage
 
@@ -42,8 +58,7 @@ usage: xtgen [-h] [-t {pd,max}] [-o DIR] [-v] [-q] [-f] [--list-examples]
 Generate PureData and Max/MSP external projects from YAML or JSON specifications
 
 positional arguments:
-  spec_file             Path to YAML or JSON specification file (default:
-                        resources/examples/counter.yml)
+  spec_file             Path to YAML or JSON specification file (default: counter.yml from examples)
 
 options:
   -h, --help            show this help message and exit
@@ -70,29 +85,43 @@ Supported file formats:
   .json        - JSON specification files
 ```
 
-It can be used as follows:
+### Development Usage
+
+When developing locally with uv:
+
+```sh
+# Run with default example (generates PD project)
+uv run xtgen
+
+# Generate Max/MSP project
+uv run xtgen -t max resources/examples/counter.json
+
+# Use custom output directory
+uv run xtgen -o /tmp/my-externals counter.yml
+
+# Verbose output with detailed information
+uv run xtgen -v counter.yml
+
+# Validate specification without generating
+uv run xtgen --validate counter.yml
+
+# List available example files
+uv run xtgen --list-examples
+```
+
+### Installed Package Usage
+
+When xtgen is installed as a package:
 
 ```sh
 # Generate PureData project (default behavior)
-uv run python xtgen.py resources/examples/counter.yml
+xtgen resources/examples/counter.yml
 
 # Generate Max/MSP project
-uv run python xtgen.py -t max resources/examples/counter.json
+xtgen -t max resources/examples/counter.json
 
 # Use custom output directory
-uv run python xtgen.py -o /tmp/my-externals counter.yml
-
-# Verbose output with detailed information
-uv run python xtgen.py -v counter.yml
-
-# Validate specification without generating
-uv run python xtgen.py --validate counter.yml
-
-# List available example files
-uv run python xtgen.py --list-examples
-
-# Get help
-uv run python xtgen.py --help
+xtgen -o /tmp/my-externals counter.yml
 ```
 
 #### CLI Options
@@ -111,13 +140,18 @@ You can also use xtgen as a Python library:
 
 ```python
 from xtgen import PdProject, MaxProject
+from pathlib import Path
 
-# Generate PureData project
-project = PdProject('resources/examples/counter.yml')
+# Generate PureData project from your own specification
+project = PdProject('my_external.yml')
 project.generate()
 
 # Generate Max/MSP project
-project = MaxProject('resources/examples/counter.json')
+project = MaxProject('my_external.json')
+project.generate()
+
+# Generate with custom output directory
+project = PdProject('spec.yml', target_dir='custom_output')
 project.generate()
 ```
 
@@ -144,14 +178,25 @@ uv run pytest tests/ -v
 ### Type Checking
 
 ```sh
-uv run mypy xtgen.py tests/
+uv run mypy src/xtgen/
 ```
 
 ### Linting and Formatting
 
 ```sh
-uv run ruff check xtgen.py tests/
-uv run ruff format xtgen.py tests/
+uv run ruff check src/xtgen/
+uv run ruff format src/xtgen/
+```
+
+### Quick Development Tasks
+
+Use the Makefile for common development tasks:
+
+```sh
+make demo        # Generate demo project in build/demo_output/
+make test        # Run test suite
+make clean       # Clean build artifacts
+make help        # Show available targets
 ```
 
 ## Specification Format
@@ -280,7 +325,7 @@ externals:
 
 ### Future Enhancements
 
-- [ ] xtgen to become a python package
+- [x] xtgen to become a python package
 - [ ] Hybrid dual Max/PD template
 - [ ] Additional DSP utility functions
 - [ ] Extended help file generation for PureData
