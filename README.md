@@ -1,15 +1,18 @@
 # xtgen
 
-A tool to generate skeleton PureData and Max/MSP external files from YAML specifications.
+A tool to generate skeleton PureData and Max/MSP external files from YAML or JSON specifications.
 
 ## Features
 
-- Generate PureData external projects with complete build system
-- Generate Max/MSP external projects
-- Template-based code generation using Mako templates
-- Type-safe YAML specification parsing
-- Comprehensive test coverage
-- Support for both regular and DSP (signal processing) externals
+- **Command-line interface** with comprehensive options and validation
+- **Generate PureData external projects** with complete build system
+- **Generate Max/MSP external projects** with proper SDK structure
+- **Template-based code generation** using Mako templates
+- **Type-safe specification parsing** (YAML and JSON formats)
+- **Automatic format detection** with intelligent fallback
+- **Validation mode** to check specifications without generating
+- **Comprehensive test coverage** (35 tests)
+- **Support for both regular and DSP** (signal processing) externals
 
 ## Installation
 
@@ -27,38 +30,69 @@ pip install mako pyyaml
 
 ## Usage
 
-### Basic Usage
+### Command Line Interface
 
-Generate a PureData external project:
+The easiest way to use xtgen is through its command-line interface:
+
+```bash
+# Generate PureData project (default behavior)
+uv run python xtgen.py resources/examples/counter.yml
+
+# Generate Max/MSP project
+uv run python xtgen.py -t max resources/examples/counter.json
+
+# Use custom output directory
+uv run python xtgen.py -o /tmp/my-externals counter.yml
+
+# Verbose output with detailed information
+uv run python xtgen.py -v counter.yml
+
+# Validate specification without generating
+uv run python xtgen.py --validate counter.yml
+
+# List available example files
+uv run python xtgen.py --list-examples
+
+# Get help
+uv run python xtgen.py --help
+```
+
+#### CLI Options
+
+- `-t, --target {pd,max}` - Target platform (default: pd)
+- `-o, --output DIR` - Output directory (default: build)
+- `-v, --verbose` - Enable verbose output
+- `-q, --quiet` - Suppress all output except errors
+- `-f, --force` - Force overwrite existing directories
+- `--validate` - Validate specification file without generating
+- `--list-examples` - List available example files
+
+### Python Library Usage
+
+You can also use xtgen as a Python library:
 
 ```python
-from xtgen import PdProject
+from xtgen import PdProject, MaxProject
 
+# Generate PureData project
 project = PdProject('resources/examples/counter.yml')
 project.generate()
-```
 
-Generate a Max/MSP external project:
-
-```python
-from xtgen import MaxProject
-
-project = MaxProject('resources/examples/counter.yml')
+# Generate Max/MSP project
+project = MaxProject('resources/examples/counter.json')
 project.generate()
 ```
 
-### Command Line Demo
+### Project Compilation
 
-Run the built-in demo:
-
-```bash
-uv run python -c "from xtgen import PdProject; p = PdProject('resources/examples/counter.yml'); p.generate()"
-```
-
-This creates a PureData external project in `build/counter/` that is ready to compile:
+Generated projects are ready to compile:
 
 ```bash
+# For PureData projects
 make -C build/counter
+
+# For Max/MSP projects (requires Max SDK)
+# Follow Max SDK build instructions
 ```
 
 ## Development
@@ -82,9 +116,11 @@ uv run ruff check xtgen.py tests/
 uv run ruff format xtgen.py tests/
 ```
 
-## YAML Specification Format
+## Specification Format
 
-External specifications are defined in YAML files. Here's the structure:
+External specifications can be defined in either YAML or JSON format. Both formats support the same structure and features.
+
+### YAML Format
 
 ```yaml
 externals:
@@ -120,25 +156,89 @@ externals:
       features: ["counting", "resettable"]
 ```
 
+### JSON Format
+
+```json
+{
+  "externals": [
+    {
+      "namespace": "my",
+      "name": "counter",
+      "prefix": "ctr",
+      "alias": "cntr",
+      "help": "help-counter",
+      "n_channels": 1,
+      "params": [
+        {
+          "name": "step",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "initial": 0.5,
+          "arg": true,
+          "inlet": true,
+          "desc": "step size"
+        }
+      ],
+      "outlets": [
+        {
+          "name": "out",
+          "type": "float"
+        }
+      ],
+      "message_methods": [
+        {
+          "name": "reset",
+          "params": [],
+          "doc": "reset counter to zero"
+        }
+      ],
+      "type_methods": [
+        {
+          "type": "bang",
+          "doc": "increment counter"
+        }
+      ],
+      "meta": {
+        "desc": "A simple counter external",
+        "author": "Your Name",
+        "repo": "https://github.com/yourname/counter",
+        "features": ["counting", "resettable"]
+      }
+    }
+  ]
+}
+```
+
+### File Format Detection
+
+- Files with `.yml` or `.yaml` extensions are parsed as YAML
+- Files with `.json` extension are parsed as JSON
+- Files with other extensions (or no extension) are automatically detected by trying YAML first, then JSON
+- Both formats produce identical results and support all the same features
+
 ## Project Status
 
 ### Completed Features
 
-- [x] Complete YAML specification parsing and validation
-- [x] PureData external project generation
-- [x] Max/MSP external project generation
-- [x] Template-based code generation system
-- [x] Support for DSP (signal processing) externals
-- [x] Comprehensive type system with validation
-- [x] Full test coverage (22 tests)
-- [x] Type safety with mypy
-- [x] Code quality with ruff linting
-- [x] Inlet and outlet generation
-- [x] Parameter handling with constructor arguments
-- [x] Message method generation
-- [x] Type method generation (bang, float, symbol, etc.)
-- [x] Build system integration (Makefiles)
-- [x] Documentation generation
+- [x] **Command-line interface** with argparse-based argument parsing
+- [x] **Complete specification parsing** (YAML and JSON) with validation
+- [x] **PureData external project generation** with build system
+- [x] **Max/MSP external project generation** with SDK integration
+- [x] **Template-based code generation** system using Mako
+- [x] **Support for DSP externals** (signal processing)
+- [x] **Comprehensive type system** with validation and error handling
+- [x] **Full test coverage** (35 tests including CLI tests)
+- [x] **Type safety** with mypy validation
+- [x] **Code quality** with ruff linting and formatting
+- [x] **Validation mode** for specification checking
+- [x] **Automatic format detection** with intelligent fallback
+- [x] **Inlet and outlet generation** with proper type mapping
+- [x] **Parameter handling** with constructor arguments
+- [x] **Message method generation** with argument type checking
+- [x] **Type method generation** (bang, float, symbol, list, etc.)
+- [x] **Build system integration** (Makefiles for PD, project files for Max)
+- [x] **Documentation generation** (README files)
 
 ### Future Enhancements
 

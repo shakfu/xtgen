@@ -14,7 +14,6 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import Dict, Any, List, Generator as TypingGenerator
-import yaml
 import os
 
 from xtgen import (
@@ -32,6 +31,10 @@ from xtgen import (
     TypeMapper,
     ArgumentBuilder,
     CodeGenerator,
+    main,
+    create_argument_parser,
+    validate_specification,
+    list_examples,
 )
 
 
@@ -201,8 +204,8 @@ class TestMethodGeneration:
         assert "t_floatarg f0" in with_float.args
 
 
-class TestYAMLProcessing:
-    """Test YAML file processing and validation."""
+class TestSpecificationProcessing:
+    """Test YAML and JSON file processing and validation."""
 
     def test_valid_yaml_processing(self) -> None:
         """Test processing of valid YAML file."""
@@ -251,6 +254,113 @@ externals:
             generator: Generator = Generator(yaml_path)
             assert generator.is_dsp
             assert generator.name == "osc"
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_valid_json_processing(self) -> None:
+        """Test processing of valid JSON file."""
+        json_content: str = '''{
+  "externals": [
+    {
+      "namespace": "test",
+      "name": "simple",
+      "prefix": "smp",
+      "params": [],
+      "outlets": [],
+      "message_methods": [],
+      "type_methods": []
+    }
+  ]
+}'''
+        # Create file with specific name so we can test name detection
+        temp_dir: str = tempfile.mkdtemp()
+        json_path: Path = Path(temp_dir) / "simple.json"
+        with open(json_path, "w") as f:
+            f.write(json_content)
+
+        try:
+            generator: Generator = Generator(json_path)
+            assert generator.name == "simple"
+            assert generator.fullname == "simple"
+            assert not generator.is_dsp
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_dsp_external_detection_json(self) -> None:
+        """Test DSP external detection from JSON filename."""
+        json_content: str = '''{
+  "externals": [
+    {
+      "namespace": "test",
+      "name": "osc",
+      "prefix": "osc",
+      "params": [],
+      "outlets": [],
+      "message_methods": [],
+      "type_methods": []
+    }
+  ]
+}'''
+        temp_dir: str = tempfile.mkdtemp()
+        json_path: Path = Path(temp_dir) / "osc~.json"
+        with open(json_path, "w") as f:
+            f.write(json_content)
+
+        try:
+            generator: Generator = Generator(json_path)
+            assert generator.is_dsp
+            assert generator.name == "osc"
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_fallback_format_detection(self) -> None:
+        """Test automatic format detection for files without standard extensions."""
+        # Test YAML content with unknown extension
+        yaml_content: str = """
+externals:
+  - namespace: test
+    name: fallback_yaml
+    prefix: fy
+    params: []
+    outlets: []
+    message_methods: []
+    type_methods: []
+"""
+        temp_dir: str = tempfile.mkdtemp()
+        fallback_path: Path = Path(temp_dir) / "fallback.txt"
+        with open(fallback_path, "w") as f:
+            f.write(yaml_content)
+
+        try:
+            generator: Generator = Generator(fallback_path)
+            spec_data = generator.load_specification()
+            assert spec_data["externals"][0]["name"] == "fallback_yaml"
+        finally:
+            shutil.rmtree(temp_dir)
+
+        # Test JSON content with unknown extension
+        json_content: str = '''{
+  "externals": [
+    {
+      "namespace": "test",
+      "name": "fallback_json",
+      "prefix": "fj",
+      "params": [],
+      "outlets": [],
+      "message_methods": [],
+      "type_methods": []
+    }
+  ]
+}'''
+        temp_dir = tempfile.mkdtemp()
+        fallback_path = Path(temp_dir) / "fallback.txt"
+        with open(fallback_path, "w") as f:
+            f.write(json_content)
+
+        try:
+            generator = Generator(fallback_path)
+            spec_data = generator.load_specification()
+            assert spec_data["externals"][0]["name"] == "fallback_json"
         finally:
             shutil.rmtree(temp_dir)
 
@@ -349,6 +459,79 @@ externals:
         assert "t_outlet *out_out" in content  # outlet
         assert "A test object" in content  # description from meta
 
+    def test_json_project_generation(self, temp_dir: str) -> None:
+        """Test project generation using JSON specification file."""
+        json_content: str = '''{
+  "externals": [
+    {
+      "namespace": "test",
+      "name": "jsonobj",
+      "prefix": "json",
+      "alias": "jsonobj",
+      "help": "help-jsonobj",
+      "n_channels": 1,
+      "params": [
+        {
+          "name": "value",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "initial": 0.5,
+          "arg": true,
+          "inlet": false,
+          "desc": "test value"
+        }
+      ],
+      "outlets": [
+        {
+          "name": "out",
+          "type": "float"
+        }
+      ],
+      "message_methods": [
+        {
+          "name": "set",
+          "params": ["float"],
+          "doc": "set the value"
+        }
+      ],
+      "type_methods": [
+        {
+          "type": "bang",
+          "doc": "output current value"
+        }
+      ],
+      "meta": {
+        "desc": "A test object from JSON",
+        "author": "test",
+        "repo": "https://github.com/test/jsonobj",
+        "features": ["json test"]
+      }
+    }
+  ]
+}'''
+        json_path: Path = Path(temp_dir) / "jsonobj.json"
+        with open(json_path, "w") as f:
+            f.write(json_content)
+
+        # Test PureData project generation from JSON
+        project: PdProject = PdProject(json_path, target_dir=temp_dir)
+        project.generate()
+
+        # Check that files were created
+        project_dir: Path = Path(temp_dir) / "jsonobj"
+        assert project_dir.exists()
+        assert (project_dir / "jsonobj.c").exists()
+        assert (project_dir / "Makefile").exists()
+        assert (project_dir / "README.md").exists()
+        assert (project_dir / "Makefile.pdlibbuilder").exists()
+
+        # Verify content
+        c_file: Path = project_dir / "jsonobj.c"
+        content: str = c_file.read_text()
+        assert "typedef struct _jsonobj" in content
+        assert "A test object from JSON" in content
+
 
 class TestHelperClasses:
     """Test the new focused helper classes."""
@@ -422,15 +605,14 @@ class TestHelperClasses:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
-    def test_missing_yaml_file(self) -> None:
-        """Test handling of missing YAML file."""
+    def test_missing_specification_file(self) -> None:
+        """Test handling of missing specification file."""
         with pytest.raises(FileNotFoundError):
             generator: Generator = Generator("nonexistent.yml")
-            with open(generator.spec_yml) as f:
-                yaml.safe_load(f.read())
+            generator.load_specification()
 
-    def test_invalid_yaml_content(self) -> None:
-        """Test handling of invalid YAML content."""
+    def test_invalid_specification_content(self) -> None:
+        """Test handling of invalid specification content."""
         yaml_content: str = "invalid: yaml: content: ["
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(yaml_content)
@@ -438,11 +620,122 @@ class TestErrorHandling:
 
         try:
             generator: Generator = Generator(yaml_path)
-            with pytest.raises(yaml.YAMLError):
-                with open(generator.spec_yml) as f:
-                    yaml.safe_load(f.read())
+            with pytest.raises(ValueError):
+                generator.load_specification()
         finally:
             os.unlink(yaml_path)
+
+
+class TestCommandLineInterface:
+    """Test command-line interface functionality."""
+
+    def test_argument_parser_creation(self) -> None:
+        """Test that argument parser is created correctly."""
+        parser = create_argument_parser()
+        assert parser.prog == "xtgen"
+        assert parser.description is not None and "Generate PureData and Max/MSP external projects" in parser.description
+
+    def test_validate_specification_function(self) -> None:
+        """Test the validate_specification function."""
+        # Test with valid specification
+        result = validate_specification(Path("resources/examples/counter.yml"), verbose=False)
+        assert result is True
+
+        # Test with non-existent file
+        result = validate_specification(Path("nonexistent.yml"), verbose=False)
+        assert result is False
+
+    def test_cli_with_default_arguments(self, temp_dir: str) -> None:
+        """Test CLI with default arguments."""
+        import sys
+        from unittest.mock import patch
+
+        # Mock sys.argv to simulate CLI call
+        test_args = ["xtgen", "resources/examples/counter.yml", "-o", temp_dir]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 0
+
+        # Check that project was generated
+        project_dir = Path(temp_dir) / "counter"
+        assert project_dir.exists()
+        assert (project_dir / "counter.c").exists()
+
+    def test_cli_max_target(self, temp_dir: str) -> None:
+        """Test CLI with Max/MSP target."""
+        import sys
+        from unittest.mock import patch
+
+        test_args = ["xtgen", "-t", "max", "resources/examples/counter.json", "-o", temp_dir]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 0
+
+        # Check that Max project was generated
+        project_dir = Path(temp_dir) / "counter"
+        assert project_dir.exists()
+        assert (project_dir / "counter.c").exists()
+
+    def test_cli_validation_mode(self) -> None:
+        """Test CLI validation-only mode."""
+        import sys
+        from unittest.mock import patch
+
+        test_args = ["xtgen", "--validate", "resources/examples/counter.yml"]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 0
+
+    def test_cli_validation_mode_invalid_file(self) -> None:
+        """Test CLI validation mode with invalid file."""
+        import sys
+        from unittest.mock import patch
+
+        test_args = ["xtgen", "--validate", "nonexistent.yml"]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 1
+
+    def test_cli_list_examples(self) -> None:
+        """Test CLI list examples functionality."""
+        import sys
+        from unittest.mock import patch
+
+        test_args = ["xtgen", "--list-examples"]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 0
+
+    def test_cli_verbose_quiet_conflict(self) -> None:
+        """Test that verbose and quiet options conflict."""
+        import sys
+        from unittest.mock import patch
+
+        test_args = ["xtgen", "-v", "-q", "resources/examples/counter.yml"]
+
+        with patch.object(sys, 'argv', test_args):
+            result = main()
+            assert result == 1
+
+    def test_list_examples_function(self) -> None:
+        """Test the list_examples function."""
+        # This function prints to stdout, so we'll just ensure it doesn't crash
+        try:
+            list_examples()
+        except Exception as e:
+            pytest.fail(f"list_examples() raised an exception: {e}")
+
+    @pytest.fixture
+    def temp_dir(self) -> TypingGenerator[str, None, None]:
+        """Create a temporary directory for CLI test output."""
+        temp_dir: str = tempfile.mkdtemp()
+        yield temp_dir
+        shutil.rmtree(temp_dir)
 
 
 if __name__ == "__main__":

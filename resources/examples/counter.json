@@ -1,0 +1,125 @@
+{
+  "externals": [
+    {
+      "namespace": "my",
+      "name": "counter",
+      "prefix": "ctr",
+      "alias": "cntr",
+      "params": [
+        {
+          "name": "step",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "initial": 0.5,
+          "arg": true,
+          "inlet": true,
+          "desc": ""
+        },
+        {
+          "name": "lower",
+          "type": "float",
+          "min": 0.0,
+          "max": 0.9,
+          "initial": 0.0,
+          "arg": true,
+          "inlet": false,
+          "desc": ""
+        },
+        {
+          "name": "upper",
+          "type": "float",
+          "min": 0.1,
+          "max": 1.0,
+          "initial": 1.0,
+          "arg": true,
+          "inlet": false,
+          "desc": ""
+        }
+      ],
+      "help": "help-counter",
+      "n_channels": 2,
+      "meta": {
+        "desc": "An external which counts via a variable step and optionally between two limits.",
+        "features": [
+          "configurable integer counting",
+          "can count in steps",
+          "can count between a lower and upper bound"
+        ],
+        "author": "gpt3",
+        "repo": "https://github.com/gpt3/counter.git"
+      },
+      "inlets": [
+        {
+          "name": "bound",
+          "type": "list"
+        },
+        {
+          "name": "step",
+          "type": "float"
+        },
+        {
+          "name": "lower",
+          "type": "float"
+        }
+      ],
+      "outlets": [
+        {
+          "name": "f",
+          "type": "float"
+        },
+        {
+          "name": "b",
+          "type": "bang"
+        },
+        {
+          "name": "s",
+          "type": "symbol"
+        }
+      ],
+      "message_methods": [
+        {
+          "name": "reset",
+          "params": [],
+          "doc": "reset count to zero"
+        },
+        {
+          "name": "bound",
+          "params": ["float", "float"],
+          "doc": "set (or reset) lower and uppwer boundary of counter"
+        },
+        {
+          "name": "step",
+          "params": ["float"],
+          "doc": "set the counter increment per step"
+        }
+      ],
+      "type_methods": [
+        {
+          "type": "bang",
+          "doc": "each bang increments the counter"
+        },
+        {
+          "type": "float",
+          "doc": "each number is printed out"
+        },
+        {
+          "type": "symbol",
+          "doc": "each symbol is printed out"
+        },
+        {
+          "type": "pointer",
+          "doc": "each pointer is printed out"
+        },
+        {
+          "type": "list",
+          "doc": "each list is printed out"
+        },
+        {
+          "type": "anything",
+          "doc": "enything is printed out"
+        }
+      ]
+    }
+  ]
+}

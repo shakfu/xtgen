@@ -75,8 +75,11 @@ externals:
 
 """
 
+import argparse
+import json
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
@@ -829,17 +832,17 @@ class Generator:
     """
 
     def __init__(
-        self, spec_yml: Union[str, Path], target_dir: str = OUTPUT_DIR
+        self, spec_file: Union[str, Path], target_dir: str = OUTPUT_DIR
     ) -> None:
         """
         Initialize generator with specification file and target directory.
 
         Args:
-            spec_yml: Path to YAML specification file
+            spec_file: Path to YAML or JSON specification file
             target_dir: Directory for generated output (default: "build")
         """
-        self.spec_yml: Path = Path(spec_yml)
-        self.fullname: str = Path(spec_yml).stem
+        self.spec_file: Path = Path(spec_file)
+        self.fullname: str = Path(spec_file).stem
         self.name: str = self.fullname.strip("~")
         self.is_dsp: bool = self.fullname.endswith("~")
         self.target_dir: Path = Path(target_dir)
@@ -869,36 +872,79 @@ class Generator:
             print(f"Error: {e.stderr}")
             raise
 
+    def load_specification(self) -> Dict[str, Any]:
+        """
+        Load and parse specification file (YAML or JSON).
+
+        Returns:
+            Parsed specification data as dictionary
+
+        Raises:
+            FileNotFoundError: If specification file not found
+            ValueError: If file format is invalid or unsupported
+        """
+        if not self.spec_file.exists():
+            raise FileNotFoundError(f"Specification file not found: {self.spec_file}")
+
+        file_extension = self.spec_file.suffix.lower()
+
+        try:
+            with open(self.spec_file, 'r', encoding='utf-8') as f:
+                if file_extension in ['.yml', '.yaml']:
+                    return yaml.safe_load(f.read())
+                elif file_extension == '.json':
+                    return json.load(f)
+                else:
+                    # Try YAML first, then JSON as fallback
+                    content = f.read()
+                    try:
+                        return yaml.safe_load(content)
+                    except yaml.YAMLError:
+                        try:
+                            return json.loads(content)
+                        except json.JSONDecodeError as json_err:
+                            raise ValueError(
+                                f"File {self.spec_file} is neither valid YAML nor JSON. "
+                                f"JSON error: {json_err}. "
+                                f"Supported extensions: .yml, .yaml, .json"
+                            )
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML syntax in {self.spec_file}: {e}")
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON syntax in {self.spec_file}: {e}")
+        except Exception as e:
+            raise ValueError(f"Error reading specification file {self.spec_file}: {e}")
+
     def generate(self) -> None:
         """Generate the external project. Override this in subclasses."""
         raise NotImplementedError("Subclasses must implement generate()")
 
-    def validate_yaml_structure(self, yml_data: Dict[str, Any]) -> bool:
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
         """
-        Validate YAML structure and required fields.
+        Validate specification structure and required fields.
 
         Args:
-            yml_data: Parsed YAML data to validate
+            spec_data: Parsed specification data (YAML or JSON) to validate
 
         Returns:
             True if validation passes
 
         Raises:
-            ValueError: If YAML structure is invalid
+            ValueError: If specification structure is invalid
         """
-        if not isinstance(yml_data, dict):
-            raise ValueError("YAML file must contain a dictionary")
+        if not isinstance(spec_data, dict):
+            raise ValueError("Specification file must contain a dictionary")
 
-        if "externals" not in yml_data:
-            raise ValueError("YAML file must contain 'externals' key")
+        if "externals" not in spec_data:
+            raise ValueError("Specification file must contain 'externals' key")
 
         if (
-            not isinstance(yml_data["externals"], list)
-            or len(yml_data["externals"]) == 0
+            not isinstance(spec_data["externals"], list)
+            or len(spec_data["externals"]) == 0
         ):
             raise ValueError("'externals' must be a non-empty list")
 
-        ext = yml_data["externals"][0]
+        ext = spec_data["externals"][0]
         required_fields = ["name", "namespace"]
         for required_field in required_fields:
             if required_field not in ext:
@@ -934,11 +980,11 @@ class Generator:
 
     def render(self, template: str, outfile: Optional[str] = None) -> None:
         """
-        Render a template file with YAML data and write output.
+        Render a template file with specification data and write output.
 
         This method handles the complete rendering pipeline:
-        1. Load and validate YAML specification
-        2. Create External object from YAML data
+        1. Load and validate specification (YAML or JSON)
+        2. Create External object from specification data
         3. Render template with External object
         4. Write rendered output to file
 
@@ -947,22 +993,15 @@ class Generator:
             outfile: Output filename (default: external_name.c)
 
         Raises:
-            FileNotFoundError: If YAML or template file not found
-            ValueError: If YAML validation, External creation, or rendering fails
+            FileNotFoundError: If specification or template file not found
+            ValueError: If specification validation, External creation, or rendering fails
         """
-        try:
-            with open(self.spec_yml) as f:
-                yml: Dict[str, Any] = yaml.safe_load(f.read())
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                f"YAML specification file not found: {self.spec_yml}"
-            )
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML syntax in {self.spec_yml}: {e}")
+        # Load specification using the new unified method
+        spec_data: Dict[str, Any] = self.load_specification()
 
-        # Validate YAML structure
-        self.validate_yaml_structure(yml)
-        ext_yml: Dict[str, Any] = yml["externals"][0]
+        # Validate specification structure
+        self.validate_specification_structure(spec_data)
+        ext_data: Dict[str, Any] = spec_data["externals"][0]
 
         try:
             template_path: Path = TEMPLATE_DIR / template
@@ -971,23 +1010,23 @@ class Generator:
             raise ValueError(f"Template file not found or invalid: {template}: {e}")
 
         try:
-            # Map YAML data to External dataclass fields
+            # Map specification data to External dataclass fields
             external_data: Dict[str, Any] = {
-                "name": ext_yml["name"],
-                "namespace": ext_yml["namespace"],
-                "prefix": ext_yml.get("prefix", ""),
-                "alias": ext_yml.get("alias"),
-                "help": ext_yml.get("help"),
-                "n_channels": ext_yml.get("n_channels", 1),
-                "params_data": ext_yml.get("params", []),
-                "outlets_data": ext_yml.get("outlets", []),
-                "message_methods_data": ext_yml.get("message_methods", []),
-                "type_methods_data": ext_yml.get("type_methods", []),
-                "meta": ext_yml.get("meta"),
+                "name": ext_data["name"],
+                "namespace": ext_data["namespace"],
+                "prefix": ext_data.get("prefix", ""),
+                "alias": ext_data.get("alias"),
+                "help": ext_data.get("help"),
+                "n_channels": ext_data.get("n_channels", 1),
+                "params_data": ext_data.get("params", []),
+                "outlets_data": ext_data.get("outlets", []),
+                "message_methods_data": ext_data.get("message_methods", []),
+                "type_methods_data": ext_data.get("type_methods", []),
+                "meta": ext_data.get("meta"),
             }
             self.model = external = External(**external_data)
         except Exception as e:
-            raise ValueError(f"Failed to create External object from YAML data: {e}")
+            raise ValueError(f"Failed to create External object from specification data: {e}")
 
         try:
             rendered: str = str(templ.render(e=external))
@@ -1114,9 +1153,247 @@ class PdProject(Generator):
 
 
 # ----------------------------------------------------------------------------
-# MAIN CLASS
+# COMMAND LINE INTERFACE
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    """
+    Create and configure the command-line argument parser.
+
+    Returns:
+        Configured ArgumentParser instance
+    """
+    parser = argparse.ArgumentParser(
+        prog="xtgen",
+        description="Generate PureData and Max/MSP external projects from YAML or JSON specifications",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s counter.yml                    # Generate PD project from YAML
+  %(prog)s counter.json                   # Generate PD project from JSON
+  %(prog)s -t max counter.yml             # Generate Max/MSP project
+  %(prog)s -o /tmp/build counter.yml      # Custom output directory
+  %(prog)s -v counter.yml                 # Verbose output
+  %(prog)s --list-examples                # List available examples
+
+Supported file formats:
+  .yml, .yaml  - YAML specification files
+  .json        - JSON specification files
+  other        - Auto-detected (tries YAML first, then JSON)
+        """,
+    )
+
+    # Positional argument for specification file
+    parser.add_argument(
+        "spec_file",
+        nargs="?",
+        help="Path to YAML or JSON specification file (default: resources/examples/counter.yml)",
+        default="resources/examples/counter.yml",
+    )
+
+    # Target platform selection
+    parser.add_argument(
+        "-t",
+        "--target",
+        choices=["pd", "max"],
+        default="pd",
+        help="Target platform: 'pd' for PureData, 'max' for Max/MSP (default: pd)",
+    )
+
+    # Output directory
+    parser.add_argument(
+        "-o",
+        "--output",
+        metavar="DIR",
+        default=OUTPUT_DIR,
+        help=f"Output directory for generated projects (default: {OUTPUT_DIR})",
+    )
+
+    # Verbosity control
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output with detailed generation information",
+    )
+
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Suppress all output except errors",
+    )
+
+    # Force overwrite
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force overwrite existing project directory without warning",
+    )
+
+    # List examples
+    parser.add_argument(
+        "--list-examples",
+        action="store_true",
+        help="List available example specification files and exit",
+    )
+
+    # Validate only
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate specification file without generating project",
+    )
+
+    return parser
+
+
+def list_examples() -> None:
+    """List available example specification files."""
+    examples_dir = Path("resources/examples")
+    if not examples_dir.exists():
+        print("No examples directory found.")
+        return
+
+    print("Available example specification files:")
+    print("=====================================")
+
+    for file_path in sorted(examples_dir.glob("*")):
+        if file_path.suffix.lower() in [".yml", ".yaml", ".json"]:
+            print(f"  {file_path}")
+
+    print("\nUsage: xtgen <example_file>")
+
+
+def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
+    """
+    Validate a specification file without generating output.
+
+    Args:
+        spec_file: Path to specification file
+        verbose: Enable verbose validation output
+
+    Returns:
+        True if validation passes, False otherwise
+    """
+    try:
+        if verbose:
+            print(f"Validating specification file: {spec_file}")
+
+        generator = Generator(spec_file)
+        spec_data = generator.load_specification()
+        generator.validate_specification_structure(spec_data)
+
+        if verbose:
+            print("✓ File format valid")
+            print("✓ Specification structure valid")
+            print("✓ Required fields present")
+
+            # Show basic info about the external
+            external_data = spec_data["externals"][0]
+            print(f"✓ External name: {external_data['name']}")
+            print(f"✓ Namespace: {external_data['namespace']}")
+            print(f"✓ Parameters: {len(external_data.get('params', []))}")
+            print(f"✓ Outlets: {len(external_data.get('outlets', []))}")
+            print(f"✓ Message methods: {len(external_data.get('message_methods', []))}")
+            print(f"✓ Type methods: {len(external_data.get('type_methods', []))}")
+
+        print("Specification validation passed successfully.")
+        return True
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return False
+    except ValueError as e:
+        print(f"Validation error: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Unexpected error during validation: {e}", file=sys.stderr)
+        return False
+
+
+def main() -> int:
+    """
+    Main entry point for the command-line interface.
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    # Handle mutually exclusive verbose/quiet options
+    if args.verbose and args.quiet:
+        print("Error: --verbose and --quiet options are mutually exclusive", file=sys.stderr)
+        return 1
+
+    # Handle special commands
+    if args.list_examples:
+        list_examples()
+        return 0
+
+    # Validate specification file path
+    spec_file = Path(args.spec_file)
+    if not spec_file.exists():
+        print(f"Error: Specification file not found: {spec_file}", file=sys.stderr)
+        return 1
+
+    # Handle validation-only mode
+    if args.validate:
+        return 0 if validate_specification(spec_file, args.verbose) else 1
+
+    try:
+        # Create appropriate project generator
+        if args.target == "pd":
+            project: Union[PdProject, MaxProject] = PdProject(spec_file, target_dir=args.output)
+        elif args.target == "max":
+            project = MaxProject(spec_file, target_dir=args.output)
+        else:
+            print(f"Error: Unknown target platform: {args.target}", file=sys.stderr)
+            return 1
+
+        # Verbose output
+        if args.verbose:
+            print(f"Generating {args.target.upper()} project from: {spec_file}")
+            print(f"Output directory: {args.output}")
+            print(f"Project directory: {project.project_path}")
+
+        # Generate the project
+        project.generate()
+
+        # Success message
+        if not args.quiet:
+            print(f"Successfully generated {args.target.upper()} project: {project.project_path}")
+            if args.verbose:
+                print("Files created:")
+                for file_path in sorted(project.project_path.glob("*")):
+                    if file_path.is_file():
+                        print(f"  {file_path}")
+
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except OSError as e:
+        if not args.force:
+            print(f"Error: {e}", file=sys.stderr)
+            print("Use --force to overwrite existing directories", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        return 1
+
+    return 0
+
+
+# ----------------------------------------------------------------------------
+# MAIN ENTRY POINT
 
 if __name__ == "__main__":
-    p = PdProject("resources/examples/counter.yml")
-    # p = MaxProject("resources/examples/counter.yml")
-    p.generate()
+    sys.exit(main())
