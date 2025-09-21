@@ -85,6 +85,11 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 
 try:
+    from importlib.resources import files, as_file
+except ImportError:
+    from importlib_resources import files, as_file
+
+try:
     import yaml
     YAML_AVAILABLE = True
 except ImportError:
@@ -97,9 +102,21 @@ from mako.lookup import TemplateLookup
 # ----------------------------------------------------------------------------
 # CONSTANTS
 
+def get_package_resource_path(resource_path: str) -> Path:
+    """Get path to a package resource file."""
+    try:
+        # Try to get the traversable path
+        resource_files = files("xtgen") / resource_path
+        # Use as_file context manager for proper handling
+        with as_file(resource_files) as path:
+            return Path(str(path))
+    except Exception:
+        # Fallback to the directory this file is in
+        return Path(__file__).parent / resource_path
+
 # Get the directory containing this script
 SCRIPT_DIR = Path(__file__).parent
-TEMPLATE_DIR = SCRIPT_DIR / "resources" / "templates"
+TEMPLATE_DIR = get_package_resource_path("resources/templates")
 TEMPLATE_LOOKUP = TemplateLookup(directories=[str(TEMPLATE_DIR)])
 OUTPUT_DIR = "build"
 
@@ -1155,7 +1172,7 @@ class PdProject(Generator):
                 )
 
         # Copy pdlibbuilder Makefile for compilation support
-        src_makefile: Path = Path("resources/pd/Makefile.pdlibbuilder")
+        src_makefile: Path = get_package_resource_path("resources/pd/Makefile.pdlibbuilder")
         dst_makefile: Path = self.project_path / "Makefile.pdlibbuilder"
         shutil.copy2(src_makefile, dst_makefile)
 
@@ -1223,8 +1240,8 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
     parser.add_argument(
         "spec_file",
         nargs="?",
-        help="Path to YAML or JSON specification file (default: resources/examples/counter.yml)",
-        default="resources/examples/counter.yml",
+        help="Path to YAML or JSON specification file (default: counter.yml from examples)",
+        default=None,
     )
 
     # Target platform selection
@@ -1287,7 +1304,7 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
 
 def list_examples() -> None:
     """List available example specification files."""
-    examples_dir = Path("resources/examples")
+    examples_dir = get_package_resource_path("resources/examples")
     if not examples_dir.exists():
         print("No examples directory found.")
         return
@@ -1369,8 +1386,17 @@ def main() -> int:
         list_examples()
         return 0
 
-    # Validate specification file path
-    spec_file = Path(args.spec_file)
+    # Handle default specification file
+    if args.spec_file is None:
+        # Use default example file
+        default_spec = get_package_resource_path("resources/examples/counter.yml")
+        if not default_spec.exists():
+            # Fallback to JSON if YAML example not available
+            default_spec = get_package_resource_path("resources/examples/counter.json")
+        spec_file = default_spec
+    else:
+        spec_file = Path(args.spec_file)
+
     if not spec_file.exists():
         print(f"Error: Specification file not found: {spec_file}", file=sys.stderr)
         return 1

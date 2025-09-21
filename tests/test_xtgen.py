@@ -38,6 +38,20 @@ from xtgen import (
     YAML_AVAILABLE,
 )
 
+try:
+    from importlib.resources import files
+except ImportError:
+    from importlib_resources import files
+
+def get_test_resource_path(resource_path: str) -> Path:
+    """Get path to a package resource file for testing."""
+    resource_files = files("xtgen") / resource_path
+    if hasattr(resource_files, 'as_posix'):
+        return Path(str(resource_files))
+    else:
+        with resource_files as path:
+            return Path(str(path))
+
 
 class TestTypeSystem:
     """Test the audio type system classes."""
@@ -639,7 +653,7 @@ class TestCommandLineInterface:
     def test_validate_specification_function(self) -> None:
         """Test the validate_specification function."""
         # Test with valid specification
-        result = validate_specification(Path("resources/examples/counter.yml"), verbose=False)
+        result = validate_specification(get_test_resource_path("resources/examples/counter.yml"), verbose=False)
         assert result is True
 
         # Test with non-existent file
@@ -652,7 +666,7 @@ class TestCommandLineInterface:
         from unittest.mock import patch
 
         # Mock sys.argv to simulate CLI call
-        test_args = ["xtgen", "resources/examples/counter.yml", "-o", temp_dir]
+        test_args = ["xtgen", str(get_test_resource_path("resources/examples/counter.yml")), "-o", temp_dir]
 
         with patch.object(sys, 'argv', test_args):
             result = main()
@@ -668,7 +682,7 @@ class TestCommandLineInterface:
         import sys
         from unittest.mock import patch
 
-        test_args = ["xtgen", "-t", "max", "resources/examples/counter.json", "-o", temp_dir]
+        test_args = ["xtgen", "-t", "max", str(get_test_resource_path("resources/examples/counter.json")), "-o", temp_dir]
 
         with patch.object(sys, 'argv', test_args):
             result = main()
@@ -684,7 +698,7 @@ class TestCommandLineInterface:
         import sys
         from unittest.mock import patch
 
-        test_args = ["xtgen", "--validate", "resources/examples/counter.yml"]
+        test_args = ["xtgen", "--validate", str(get_test_resource_path("resources/examples/counter.yml"))]
 
         with patch.object(sys, 'argv', test_args):
             result = main()
@@ -717,7 +731,7 @@ class TestCommandLineInterface:
         import sys
         from unittest.mock import patch
 
-        test_args = ["xtgen", "-v", "-q", "resources/examples/counter.yml"]
+        test_args = ["xtgen", "-v", "-q", str(get_test_resource_path("resources/examples/counter.yml"))]
 
         with patch.object(sys, 'argv', test_args):
             result = main()
@@ -758,7 +772,7 @@ externals:
         yaml_file.write_text(yaml_content)
 
         # Mock YAML_AVAILABLE to False
-        with unittest.mock.patch('xtgen.YAML_AVAILABLE', False):
+        with unittest.mock.patch('xtgen.core.YAML_AVAILABLE', False):
             project = PdProject(yaml_file)
 
             # Should raise an error when trying to load YAML file
@@ -781,7 +795,7 @@ externals:
         json_file.write_text(json_content)
 
         # Mock YAML_AVAILABLE to False
-        with unittest.mock.patch('xtgen.YAML_AVAILABLE', False):
+        with unittest.mock.patch('xtgen.core.YAML_AVAILABLE', False):
             project = PdProject(json_file)
 
             # Should work fine with JSON
