@@ -13,6 +13,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
+from typing import Dict, Any, List, Generator as TypingGenerator
 import yaml
 import os
 
@@ -26,40 +27,40 @@ from xtgen import (
 class TestTypeSystem:
     """Test the audio type system classes."""
 
-    def test_scalar_type_valid_types(self):
+    def test_scalar_type_valid_types(self) -> None:
         """Test ScalarType with valid types."""
         for valid_type in ["bang", "float", "symbol", "pointer", "signal"]:
-            scalar = ScalarType(valid_type)
+            scalar: ScalarType = ScalarType(valid_type)
             assert scalar.name == valid_type
             assert str(scalar) == valid_type
 
-    def test_scalar_type_invalid_type(self):
+    def test_scalar_type_invalid_type(self) -> None:
         """Test ScalarType with invalid type raises AudioTypeError."""
         with pytest.raises(AudioTypeError):
             ScalarType("invalid_type")
 
-    def test_scalar_type_properties(self):
+    def test_scalar_type_properties(self) -> None:
         """Test ScalarType property generation."""
-        float_type = ScalarType("float")
+        float_type: ScalarType = ScalarType("float")
         assert float_type.c_type == "t_float"
         assert float_type.lookup_address == "&s_float"
         assert float_type.lookup_routine == 'gensym("float")'
         assert float_type.type_method_arg == "t_floatarg f"
 
-    def test_compound_type_valid_types(self):
+    def test_compound_type_valid_types(self) -> None:
         """Test CompoundType with valid types."""
         for valid_type in ["list", "anything"]:
-            compound = CompoundType(valid_type)
+            compound: CompoundType = CompoundType(valid_type)
             assert compound.name == valid_type
 
-    def test_compound_type_properties(self):
+    def test_compound_type_properties(self) -> None:
         """Test CompoundType property generation."""
-        list_type = CompoundType("list")
+        list_type: CompoundType = CompoundType("list")
         assert list_type.c_type == "t_list"
         assert list_type.type_method_arg == "t_symbol *s, int argc, t_atom *argv"
 
         # Test 'anything' type doesn't have c_type
-        anything_type = CompoundType("anything")
+        anything_type: CompoundType = CompoundType("anything")
         with pytest.raises(AudioTypeError):
             anything_type.c_type
 
@@ -68,7 +69,7 @@ class TestExternalModel:
     """Test External class and related components."""
 
     @pytest.fixture
-    def sample_external_data(self):
+    def sample_external_data(self) -> Dict[str, Any]:
         """Sample external data for testing."""
         return {
             "namespace": "test",
@@ -106,41 +107,41 @@ class TestExternalModel:
             ]
         }
 
-    def test_external_creation(self, sample_external_data):
+    def test_external_creation(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External object creation from data."""
-        external = External(**sample_external_data)
+        external: External = External(**sample_external_data)
         assert external.name == "counter"
         assert external.type == "t_counter"
         assert external.klass == "counter_class"
 
-    def test_external_params(self, sample_external_data):
+    def test_external_params(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External params property."""
-        external = External(**sample_external_data)
-        params = external.params
+        external: External = External(**sample_external_data)
+        params: List[Param] = external.params
         assert len(params) == 1
         assert params[0].name == "step"
         assert params[0].type == "float"
         assert params[0].is_arg == True
 
-    def test_external_outlets(self, sample_external_data):
+    def test_external_outlets(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External outlets property."""
-        external = External(**sample_external_data)
-        outlets = external.outlets
+        external: External = External(**sample_external_data)
+        outlets: List[Outlet] = external.outlets
         assert len(outlets) == 2
         assert outlets[0].name == "f"
         assert outlets[1].type == "bang"
 
-    def test_external_methods(self, sample_external_data):
+    def test_external_methods(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External method properties."""
-        external = External(**sample_external_data)
+        external: External = External(**sample_external_data)
 
         # Test message methods
-        msg_methods = external.message_methods
+        msg_methods: List[MessageMethod] = external.message_methods
         assert len(msg_methods) == 1
         assert msg_methods[0].name == "reset"
 
         # Test type methods
-        type_methods = external.type_methods
+        type_methods: List[TypeMethod] = external.type_methods
         assert len(type_methods) == 1
         assert type_methods[0].type == "bang"
 
@@ -149,7 +150,7 @@ class TestMethodGeneration:
     """Test method generation for External objects."""
 
     @pytest.fixture
-    def external_with_methods(self):
+    def external_with_methods(self) -> External:
         """External with various method types for testing."""
         return External(
             name="test",
@@ -168,36 +169,36 @@ class TestMethodGeneration:
             outlets_data=[]
         )
 
-    def test_type_method_args(self, external_with_methods):
+    def test_type_method_args(self, external_with_methods: External) -> None:
         """Test TypeMethod argument generation."""
-        type_methods = external_with_methods.type_methods
+        type_methods: List[TypeMethod] = external_with_methods.type_methods
 
-        bang_method = next(m for m in type_methods if m.type == "bang")
+        bang_method: TypeMethod = next(m for m in type_methods if m.type == "bang")
         assert "t_test *x" in bang_method.args
 
-        float_method = next(m for m in type_methods if m.type == "float")
+        float_method: TypeMethod = next(m for m in type_methods if m.type == "float")
         assert "t_floatarg f" in float_method.args
 
-        list_method = next(m for m in type_methods if m.type == "list")
+        list_method: TypeMethod = next(m for m in type_methods if m.type == "list")
         assert "t_symbol *s, int argc, t_atom *argv" in list_method.args
 
-    def test_message_method_args(self, external_with_methods):
+    def test_message_method_args(self, external_with_methods: External) -> None:
         """Test MessagedMethod argument generation."""
-        msg_methods = external_with_methods.message_methods
+        msg_methods: List[MessageMethod] = external_with_methods.message_methods
 
-        simple = next(m for m in msg_methods if m.name == "simple")
+        simple: MessageMethod = next(m for m in msg_methods if m.name == "simple")
         assert simple.args == "t_test *x"
 
-        with_float = next(m for m in msg_methods if m.name == "with_float")
+        with_float: MessageMethod = next(m for m in msg_methods if m.name == "with_float")
         assert "t_floatarg f0" in with_float.args
 
 
 class TestYAMLProcessing:
     """Test YAML file processing and validation."""
 
-    def test_valid_yaml_processing(self):
+    def test_valid_yaml_processing(self) -> None:
         """Test processing of valid YAML file."""
-        yaml_content = """
+        yaml_content: str = """
 externals:
   - namespace: test
     name: simple
@@ -208,22 +209,22 @@ externals:
     type_methods: []
 """
         # Create file with specific name so we can test name detection
-        temp_dir = tempfile.mkdtemp()
-        yaml_path = Path(temp_dir) / "simple.yml"
+        temp_dir: str = tempfile.mkdtemp()
+        yaml_path: Path = Path(temp_dir) / "simple.yml"
         with open(yaml_path, 'w') as f:
             f.write(yaml_content)
 
         try:
-            generator = Generator(yaml_path)
+            generator: Generator = Generator(yaml_path)
             assert generator.name == "simple"
             assert generator.fullname == "simple"
             assert generator.is_dsp == False
         finally:
             shutil.rmtree(temp_dir)
 
-    def test_dsp_external_detection(self):
+    def test_dsp_external_detection(self) -> None:
         """Test DSP external detection from filename."""
-        yaml_content = """
+        yaml_content: str = """
 externals:
   - namespace: test
     name: osc
@@ -233,13 +234,13 @@ externals:
     message_methods: []
     type_methods: []
 """
-        temp_dir = tempfile.mkdtemp()
-        yaml_path = Path(temp_dir) / "osc~.yml"
+        temp_dir: str = tempfile.mkdtemp()
+        yaml_path: Path = Path(temp_dir) / "osc~.yml"
         with open(yaml_path, 'w') as f:
             f.write(yaml_content)
 
         try:
-            generator = Generator(yaml_path)
+            generator: Generator = Generator(yaml_path)
             assert generator.is_dsp == True
             assert generator.name == "osc"
         finally:
@@ -250,16 +251,16 @@ class TestProjectGeneration:
     """Test end-to-end project generation."""
 
     @pytest.fixture
-    def temp_dir(self):
+    def temp_dir(self) -> TypingGenerator[str, None, None]:
         """Create a temporary directory for test output."""
-        temp_dir = tempfile.mkdtemp()
+        temp_dir: str = tempfile.mkdtemp()
         yield temp_dir
         shutil.rmtree(temp_dir)
 
     @pytest.fixture
-    def sample_yaml_file(self, temp_dir):
+    def sample_yaml_file(self, temp_dir: str) -> Path:
         """Create a sample YAML file for testing."""
-        yaml_content = """
+        yaml_content: str = """
 externals:
   - namespace: test
     name: testobj
@@ -292,42 +293,42 @@ externals:
       repo: "https://github.com/test/testobj"
       features: ["simple test"]
 """
-        yaml_path = Path(temp_dir) / "testobj.yml"
+        yaml_path: Path = Path(temp_dir) / "testobj.yml"
         with open(yaml_path, 'w') as f:
             f.write(yaml_content)
         return yaml_path
 
-    def test_pd_project_generation(self, sample_yaml_file, temp_dir):
+    def test_pd_project_generation(self, sample_yaml_file: Path, temp_dir: str) -> None:
         """Test PureData project generation."""
-        project = PdProject(sample_yaml_file, target_dir=temp_dir)
+        project: PdProject = PdProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
 
         # Check that files were created
-        project_dir = Path(temp_dir) / "testobj"
+        project_dir: Path = Path(temp_dir) / "testobj"
         assert project_dir.exists()
         assert (project_dir / "testobj.c").exists()
         assert (project_dir / "Makefile").exists()
         assert (project_dir / "README.md").exists()
         assert (project_dir / "Makefile.pdlibbuilder").exists()
 
-    def test_max_project_generation(self, sample_yaml_file, temp_dir):
+    def test_max_project_generation(self, sample_yaml_file: Path, temp_dir: str) -> None:
         """Test Max/MSP project generation."""
-        project = MaxProject(sample_yaml_file, target_dir=temp_dir)
+        project: MaxProject = MaxProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
 
         # Check that files were created
-        project_dir = Path(temp_dir) / "testobj"
+        project_dir: Path = Path(temp_dir) / "testobj"
         assert project_dir.exists()
         assert (project_dir / "testobj.c").exists()
         assert (project_dir / "README.md").exists()
 
-    def test_generated_c_file_content(self, sample_yaml_file, temp_dir):
+    def test_generated_c_file_content(self, sample_yaml_file: Path, temp_dir: str) -> None:
         """Test that generated C file contains expected content."""
-        project = PdProject(sample_yaml_file, target_dir=temp_dir)
+        project: PdProject = PdProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
 
-        c_file = Path(temp_dir) / "testobj" / "testobj.c"
-        content = c_file.read_text()
+        c_file: Path = Path(temp_dir) / "testobj" / "testobj.c"
+        content: str = c_file.read_text()
 
         # Check for essential C code elements
         assert "typedef struct _testobj" in content
@@ -340,9 +341,9 @@ externals:
 class TestHelperClasses:
     """Test the new focused helper classes."""
 
-    def test_type_mapper(self):
+    def test_type_mapper(self) -> None:
         """Test TypeMapper functionality."""
-        mapper = TypeMapper()
+        mapper: TypeMapper = TypeMapper()
 
         # Test valid mappings
         assert mapper.get_pd_mapping("float") == "A_DEFFLOAT"
@@ -355,10 +356,10 @@ class TestHelperClasses:
         with pytest.raises(AudioTypeError):
             mapper.get_func_arg("invalid_type")
 
-    def test_argument_builder(self):
+    def test_argument_builder(self) -> None:
         """Test ArgumentBuilder functionality."""
-        mapper = TypeMapper()
-        builder = ArgumentBuilder(mapper)
+        mapper: TypeMapper = TypeMapper()
+        builder: ArgumentBuilder = ArgumentBuilder(mapper)
 
         # Test empty args
         assert builder.build_constructor_args([]) == "void"
@@ -366,26 +367,26 @@ class TestHelperClasses:
         # Test type signature
         assert builder.build_type_signature([]) == ", 0"
 
-    def test_code_generator(self):
+    def test_code_generator(self) -> None:
         """Test CodeGenerator functionality."""
-        mapper = TypeMapper()
-        builder = ArgumentBuilder(mapper)
-        generator = CodeGenerator(mapper, builder)
+        mapper: TypeMapper = TypeMapper()
+        builder: ArgumentBuilder = ArgumentBuilder(mapper)
+        generator: CodeGenerator = CodeGenerator(mapper, builder)
 
         # Test method generation
-        method_call = generator.generate_class_addmethod("test", "bang", "bang")
+        method_call: str = generator.generate_class_addmethod("test", "bang", "bang")
         assert "class_addbang" in method_call
         assert "test_class" in method_call
 
         # Test message method generation
-        message_call = generator.generate_message_addmethod("test", "reset", [])
+        message_call: str = generator.generate_message_addmethod("test", "reset", [])
         assert "class_addmethod" in message_call
         assert "reset" in message_call
 
-    def test_helper_integration(self):
+    def test_helper_integration(self) -> None:
         """Test that helper classes work together correctly."""
         # Create a simple external to test integration
-        external_data = {
+        external_data: Dict[str, Any] = {
             "name": "test",
             "namespace": "test",
             "params_data": [],
@@ -394,7 +395,7 @@ class TestHelperClasses:
             "type_methods_data": []
         }
 
-        external = External(**external_data)
+        external: External = External(**external_data)
 
         # Test that helper objects are created
         assert external.type_mapper is not None
@@ -409,22 +410,22 @@ class TestHelperClasses:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
-    def test_missing_yaml_file(self):
+    def test_missing_yaml_file(self) -> None:
         """Test handling of missing YAML file."""
         with pytest.raises(FileNotFoundError):
-            generator = Generator("nonexistent.yml")
+            generator: Generator = Generator("nonexistent.yml")
             with open(generator.spec_yml) as f:
                 yaml.safe_load(f.read())
 
-    def test_invalid_yaml_content(self):
+    def test_invalid_yaml_content(self) -> None:
         """Test handling of invalid YAML content."""
-        yaml_content = "invalid: yaml: content: ["
+        yaml_content: str = "invalid: yaml: content: ["
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
             f.write(yaml_content)
-            yaml_path = f.name
+            yaml_path: str = f.name
 
         try:
-            generator = Generator(yaml_path)
+            generator: Generator = Generator(yaml_path)
             with pytest.raises(yaml.YAMLError):
                 with open(generator.spec_yml) as f:
                     yaml.safe_load(f.read())

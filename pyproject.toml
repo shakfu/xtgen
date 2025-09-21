@@ -17,3 +17,9 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "types-pyyaml>=6.0.12.20250915",
+]

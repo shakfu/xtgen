@@ -126,18 +126,34 @@ class AudioTypeError(ValueError):
 # HELPER CLASSES FOR EXTERNAL GENERATION
 
 
-@dataclass
 class TypeMapper:
-    """Handles mapping between audio types and C code representations."""
+    """
+    Handles mapping between audio types and C code representations.
 
-    # Type mappings for PureData API
-    TYPE_MAPPINGS = {
+    This class provides static mappings from audio-specific type names
+    to their corresponding C language representations and PureData API constants.
+    It serves as the central type conversion utility for external generation.
+
+    The class maintains two key mappings:
+    - TYPE_MAPPINGS: Audio types to PureData API constants
+    - FUNC_TYPE_ARGS: Audio types to C function argument strings
+
+    Example:
+        >>> TypeMapper.get_pd_mapping('float')
+        'A_DEFFLOAT'
+        >>> TypeMapper.get_func_arg('symbol')
+        't_symbol *s'
+    """
+
+    # Type mappings for PureData API constants
+    TYPE_MAPPINGS: Dict[str, str] = {
         "float": "A_DEFFLOAT",
         "symbol": "A_DEFSYMBOL",
         "anything": "A_GIMME",
     }
 
-    FUNC_TYPE_ARGS = {
+    # Function argument mappings for C function signatures
+    FUNC_TYPE_ARGS: Dict[str, str] = {
         "float": "t_floatarg f",
         "symbol": "t_symbol *s",
         "anything": "t_symbol *s, int argc, t_atom *argv",
@@ -145,14 +161,36 @@ class TypeMapper:
 
     @classmethod
     def get_pd_mapping(cls, type_name: str) -> str:
-        """Get PureData type mapping for a given type."""
+        """
+        Get PureData API constant for a given audio type.
+
+        Args:
+            type_name: Audio type name (e.g., 'float', 'symbol', 'anything')
+
+        Returns:
+            PureData API constant string (e.g., 'A_DEFFLOAT', 'A_DEFSYMBOL')
+
+        Raises:
+            AudioTypeError: If type_name is not supported
+        """
         if type_name not in cls.TYPE_MAPPINGS:
             raise AudioTypeError(f"Unknown type mapping for '{type_name}'. Valid types: {list(cls.TYPE_MAPPINGS.keys())}")
         return cls.TYPE_MAPPINGS[type_name]
 
     @classmethod
     def get_func_arg(cls, type_name: str) -> str:
-        """Get C function argument for a given type."""
+        """
+        Get C function argument string for a given audio type.
+
+        Args:
+            type_name: Audio type name (e.g., 'float', 'symbol', 'anything')
+
+        Returns:
+            C function argument string (e.g., 't_floatarg f', 't_symbol *s')
+
+        Raises:
+            AudioTypeError: If type_name is not supported
+        """
         if type_name not in cls.FUNC_TYPE_ARGS:
             raise AudioTypeError(f"Unknown function argument type '{type_name}'. Valid types: {list(cls.FUNC_TYPE_ARGS.keys())}")
         return cls.FUNC_TYPE_ARGS[type_name]
@@ -160,19 +198,56 @@ class TypeMapper:
 
 @dataclass
 class ArgumentBuilder:
-    """Builds C function arguments for various external components."""
+    """
+    Builds C function arguments for various external components.
 
-    def __init__(self, type_mapper: TypeMapper):
+    This class constructs proper C function signatures and argument lists
+    for external constructors, type methods, and message methods. It handles
+    the complexity of mapping audio types to appropriate C argument strings
+    while respecting PureData's argument limits and conventions.
+
+    Key responsibilities:
+    - Generate constructor argument lists with proper type mapping
+    - Create PureData class type signatures for registration
+    - Build method argument lists including external instance pointers
+
+    Example:
+        >>> mapper = TypeMapper()
+        >>> builder = ArgumentBuilder(mapper)
+        >>> builder.build_constructor_args([Param('step', 'float')])
+        't_floatarg f0'
+    """
+    type_mapper: TypeMapper
+
+    def __init__(self, type_mapper: TypeMapper) -> None:
+        """
+        Initialize ArgumentBuilder with a TypeMapper instance.
+
+        Args:
+            type_mapper: TypeMapper instance for type conversions
+        """
         self.type_mapper = type_mapper
 
     def build_constructor_args(self, args: List['Param']) -> str:
-        """Build C constructor arguments for external creation."""
+        """
+        Build C constructor arguments for external creation.
+
+        Constructs the argument list for the external's constructor function,
+        handling PureData's limitation of 6 typed arguments before falling
+        back to A_GIMME (generic argument parsing).
+
+        Args:
+            args: List of Param objects representing constructor arguments
+
+        Returns:
+            C function argument string for constructor signature
+        """
         if len(args) == 0:
             return "void"
         elif 0 < len(args) <= 6:
-            type_args = []
+            type_args: List[str] = []
             for i, arg in enumerate(args):
-                func_arg = self.type_mapper.get_func_arg(arg.type)
+                func_arg: str = self.type_mapper.get_func_arg(arg.type)
                 type_args.append(func_arg + str(i))
             return ", ".join(type_args)
         else:
@@ -180,51 +255,129 @@ class ArgumentBuilder:
             return "t_symbol *s, int argc, t_atom *argv"
 
     def build_type_signature(self, args: List['Param']) -> str:
-        """Build PureData class type signature."""
-        suffix = ", 0"
+        """
+        Build PureData class type signature for registration.
+
+        Creates the type signature string used in class_new() calls to
+        register the external with PureData's type system.
+
+        Args:
+            args: List of Param objects representing constructor arguments
+
+        Returns:
+            Type signature string for PureData class registration
+        """
+        suffix: str = ", 0"
 
         if len(args) == 0:
             return suffix
         elif 0 < len(args) <= 6:
-            mappings = []
+            mappings: List[str] = []
             for arg in args:
-                mapping = self.type_mapper.get_pd_mapping(arg.type)
+                mapping: str = self.type_mapper.get_pd_mapping(arg.type)
                 mappings.append(mapping)
             return ", ".join(mappings) + suffix
         else:
             return "A_GIMME" + suffix
 
     def build_method_args(self, external_type: str, params: List[str]) -> str:
-        """Build C function arguments for message methods."""
-        base_arg = f"{external_type} *x"
+        """
+        Build C function arguments for message methods.
+
+        Constructs argument lists for message method functions, always
+        including the external instance pointer as the first argument.
+
+        Args:
+            external_type: C type name of the external (e.g., 't_counter')
+            params: List of parameter type names for the method
+
+        Returns:
+            C function argument string for message method signature
+        """
+        base_arg: str = f"{external_type} *x"
 
         if len(params) == 0:
             return base_arg
         elif params == ["list"] or len(params) > 6:
             return f"{base_arg}, t_symbol *s, int argc, t_atom *argv"
         else:
-            type_args = []
+            type_args: List[str] = []
             for i, param_type in enumerate(params):
-                func_arg = self.type_mapper.get_func_arg(param_type)
+                func_arg: str = self.type_mapper.get_func_arg(param_type)
                 type_args.append(func_arg + str(i))
             return f"{base_arg}, {', '.join(type_args)}"
 
 
 @dataclass
 class CodeGenerator:
-    """Generates C code snippets for external components."""
+    """
+    Generates C code snippets for external components.
 
-    def __init__(self, type_mapper: TypeMapper, arg_builder: ArgumentBuilder):
+    This class creates specific C code fragments used in audio external
+    generation, focusing on PureData API calls for method registration,
+    class setup, and alias creation. It works closely with TypeMapper
+    and ArgumentBuilder to ensure proper type handling.
+
+    Key responsibilities:
+    - Generate class method registration calls (class_addbang, class_addfloat, etc.)
+    - Create message method registration calls (class_addmethod)
+    - Generate alias creator calls (class_addcreator)
+
+    Example:
+        >>> mapper = TypeMapper()
+        >>> builder = ArgumentBuilder(mapper)
+        >>> generator = CodeGenerator(mapper, builder)
+        >>> generator.generate_class_addmethod('counter', 'bang', 'bang')
+        'class_addbang(counter_class, counter_bang)'
+    """
+    type_mapper: TypeMapper
+    arg_builder: ArgumentBuilder
+
+    def __init__(self, type_mapper: TypeMapper, arg_builder: ArgumentBuilder) -> None:
+        """
+        Initialize CodeGenerator with required helper instances.
+
+        Args:
+            type_mapper: TypeMapper instance for type conversions
+            arg_builder: ArgumentBuilder instance for argument construction
+        """
         self.type_mapper = type_mapper
         self.arg_builder = arg_builder
 
     def generate_class_addmethod(self, external_name: str, method_name: str, method_type: str) -> str:
-        """Generate class_add method call for type methods."""
+        """
+        Generate class_add method call for type methods.
+
+        Creates the appropriate class_add* call for registering type-specific
+        methods (bang, float, symbol, etc.) with PureData's class system.
+
+        Args:
+            external_name: Name of the external class
+            method_name: Name of the method (currently unused, kept for consistency)
+            method_type: Type of the method (bang, float, symbol, etc.)
+
+        Returns:
+            C code string for class method registration
+        """
         return f"class_add{method_type}({external_name}_class, {external_name}_{method_type})"
 
     def generate_message_addmethod(self, external_name: str, method_name: str, params: List[str]) -> str:
-        """Generate class_addmethod call for message methods."""
-        prefix = (
+        """
+        Generate class_addmethod call for message methods.
+
+        Creates the class_addmethod call for registering custom message
+        methods with PureData, handling parameter type mapping and
+        argument count limitations.
+
+        Args:
+            external_name: Name of the external class
+            method_name: Name of the message method
+            params: List of parameter type names
+
+        Returns:
+            C code string for message method registration
+        """
+        prefix: str = (
             f"class_addmethod({external_name}_class, "
             f"(t_method){external_name}_{method_name}, "
             f'gensym("{method_name}")'
@@ -235,14 +388,28 @@ class CodeGenerator:
         elif params == ["list"] or len(params) > 6:
             return f"{prefix}, A_GIMME, 0)"
         else:
-            mappings = []
+            mappings: List[str] = []
             for param_type in params:
-                mapping = self.type_mapper.get_pd_mapping(param_type)
+                mapping: str = self.type_mapper.get_pd_mapping(param_type)
                 mappings.append(mapping)
             return f"{prefix}, {', '.join(mappings)}, 0)"
 
-    def generate_creator_call(self, external_name: str, alias: str, type_signature: str) -> str:
-        """Generate class_addcreator call for external alias."""
+    def generate_creator_call(self, external_name: str, alias: Optional[str], type_signature: str) -> str:
+        """
+        Generate class_addcreator call for external alias.
+
+        Creates the class_addcreator call for registering an alternative
+        name (alias) for the external, allowing users to instantiate
+        the external using different names.
+
+        Args:
+            external_name: Name of the external class
+            alias: Alias name for the external
+            type_signature: Type signature string for the creator
+
+        Returns:
+            C code string for alias registration, empty string if no alias needed
+        """
         if not alias or alias == external_name:
             return ""  # No alias needed
         return (
@@ -601,19 +768,51 @@ class External:
 # MAIN CLASS
 
 class Generator:
-    """main base class to manage external projects and related files."""
+    """
+    Base class for managing external project generation and file operations.
 
-    def __init__(self, spec_yml, target_dir=OUTPUT_DIR):
-        self.spec_yml = Path(spec_yml)
-        self.fullname = Path(spec_yml).stem
-        self.name = self.fullname.strip("~")
-        self.is_dsp = self.fullname.endswith("~")
-        self.target_dir = Path(target_dir)
-        self.project_path = self.target_dir / self.fullname
-        self.model = None
+    This class handles the common functionality for generating audio externals,
+    including YAML processing, template rendering, and file operations.
 
-    def cmd(self, command_args):
-        """Execute command safely using subprocess."""
+    Attributes:
+        spec_yml: Path to the YAML specification file
+        fullname: Full name of the external (including ~ for DSP externals)
+        name: Clean name without DSP suffix
+        is_dsp: Whether this is a DSP (signal processing) external
+        target_dir: Directory where generated files will be placed
+        project_path: Full path to the generated project directory
+        model: External object created from YAML data
+    """
+
+    def __init__(self, spec_yml: Union[str, Path], target_dir: str = OUTPUT_DIR) -> None:
+        """
+        Initialize generator with specification file and target directory.
+
+        Args:
+            spec_yml: Path to YAML specification file
+            target_dir: Directory for generated output (default: "build")
+        """
+        self.spec_yml: Path = Path(spec_yml)
+        self.fullname: str = Path(spec_yml).stem
+        self.name: str = self.fullname.strip("~")
+        self.is_dsp: bool = self.fullname.endswith("~")
+        self.target_dir: Path = Path(target_dir)
+        self.project_path: Path = self.target_dir / self.fullname
+        self.model: Optional[External] = None
+
+    def cmd(self, command_args: List[str]) -> str:
+        """
+        Execute command safely using subprocess.
+
+        Args:
+            command_args: List of command arguments to execute
+
+        Returns:
+            Command stdout output
+
+        Raises:
+            subprocess.CalledProcessError: If command fails
+        """
         try:
             result = subprocess.run(command_args, check=True, capture_output=True, text=True)
             return result.stdout
@@ -622,11 +821,23 @@ class Generator:
             print(f"Error: {e.stderr}")
             raise
 
-    def generate(self):
-        """override this"""
+    def generate(self) -> None:
+        """Generate the external project. Override this in subclasses."""
+        raise NotImplementedError("Subclasses must implement generate()")
 
-    def validate_yaml_structure(self, yml_data):
-        """Validate YAML structure and required fields."""
+    def validate_yaml_structure(self, yml_data: Dict[str, Any]) -> bool:
+        """
+        Validate YAML structure and required fields.
+
+        Args:
+            yml_data: Parsed YAML data to validate
+
+        Returns:
+            True if validation passes
+
+        Raises:
+            ValueError: If YAML structure is invalid
+        """
         if not isinstance(yml_data, dict):
             raise ValueError("YAML file must contain a dictionary")
 
@@ -666,10 +877,27 @@ class Generator:
 
         return True
 
-    def render(self, template, outfile=None):
+    def render(self, template: str, outfile: Optional[str] = None) -> None:
+        """
+        Render a template file with YAML data and write output.
+
+        This method handles the complete rendering pipeline:
+        1. Load and validate YAML specification
+        2. Create External object from YAML data
+        3. Render template with External object
+        4. Write rendered output to file
+
+        Args:
+            template: Path to template file relative to templates directory
+            outfile: Output filename (default: external_name.c)
+
+        Raises:
+            FileNotFoundError: If YAML or template file not found
+            ValueError: If YAML validation, External creation, or rendering fails
+        """
         try:
             with open(self.spec_yml) as f:
-                yml = yaml.safe_load(f.read())
+                yml: Dict[str, Any] = yaml.safe_load(f.read())
         except FileNotFoundError:
             raise FileNotFoundError(f"YAML specification file not found: {self.spec_yml}")
         except yaml.YAMLError as e:
@@ -677,17 +905,17 @@ class Generator:
 
         # Validate YAML structure
         self.validate_yaml_structure(yml)
-        ext_yml = yml["externals"][0]
+        ext_yml: Dict[str, Any] = yml["externals"][0]
 
         try:
-            template_path = TEMPLATE_DIR / template
+            template_path: Path = TEMPLATE_DIR / template
             templ = Template(filename=str(template_path))
         except Exception as e:
             raise ValueError(f"Template file not found or invalid: {template}: {e}")
 
         try:
             # Map YAML data to External dataclass fields
-            external_data = {
+            external_data: Dict[str, Any] = {
                 'name': ext_yml['name'],
                 'namespace': ext_yml['namespace'],
                 'prefix': ext_yml.get('prefix', ''),
@@ -705,13 +933,13 @@ class Generator:
             raise ValueError(f"Failed to create External object from YAML data: {e}")
 
         try:
-            rendered = str(templ.render(e=external))
+            rendered: str = str(templ.render(e=external))
         except Exception as e:
             raise ValueError(f"Template rendering failed: {e}")
 
         if not outfile:
             outfile = self.fullname + ".c"
-        target = self.project_path / outfile
+        target: Path = self.project_path / outfile
 
         try:
             with open(target, "w") as f:
@@ -722,9 +950,29 @@ class Generator:
 
 
 class MaxProject(Generator):
-    """main max-centric class to manage external projects and related files."""
+    """
+    Generator for Max/MSP external projects.
 
-    def generate(self):
+    This class specializes the base Generator for creating Max/MSP externals,
+    handling the specific templates and file structure required for Max/MSP.
+
+    Example:
+        >>> project = MaxProject('counter.yml')
+        >>> project.generate()
+        # Creates Max/MSP external in build/counter/
+    """
+
+    def generate(self) -> None:
+        """
+        Generate Max/MSP external project with all required files.
+
+        Creates the project directory and renders the appropriate templates
+        for Max/MSP externals, including support for both regular and DSP externals.
+
+        Raises:
+            OSError: If project directory cannot be created
+            ValueError: If template rendering fails
+        """
         try:
             Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
@@ -734,18 +982,47 @@ class MaxProject(Generator):
             else:
                 raise OSError(f"Failed to create project directory {self.project_path}: {e}")
 
+        # Render appropriate external template based on type
         if self.is_dsp:
             self.render("mx/dsp-external.cpp.mako")
         else:
             self.render("mx/external.cpp.mako")
-        # self.render("mx/Makefile.mako", "Makefile")
+
+        # Generate documentation
         self.render("mx/README.md.mako", "README.md")
 
 
 class PdProject(Generator):
-    """main pd-centric class to manage external projects and related files."""
+    """
+    Generator for PureData external projects.
 
-    def generate(self):
+    This class specializes the base Generator for creating PureData externals,
+    handling the specific templates, Makefiles, and file structure required for PD.
+
+    Example:
+        >>> project = PdProject('counter.yml')
+        >>> project.generate()
+        # Creates PureData external in build/counter/
+    """
+
+    def generate(self) -> None:
+        """
+        Generate PureData external project with all required files.
+
+        Creates the project directory and renders the appropriate templates
+        for PureData externals, including Makefiles and support files.
+
+        The generation process:
+        1. Creates project directory structure
+        2. Copies pdlibbuilder Makefile for compilation
+        3. Renders appropriate C source template (regular or DSP)
+        4. Generates project-specific Makefile
+        5. Creates README documentation
+
+        Raises:
+            OSError: If project directory cannot be created
+            ValueError: If template rendering fails
+        """
         try:
             Path(OUTPUT_DIR).mkdir(exist_ok=True)
             self.project_path.mkdir(exist_ok=True)
@@ -755,14 +1032,18 @@ class PdProject(Generator):
             else:
                 raise OSError(f"Failed to create project directory {self.project_path}: {e}")
 
-        # Copy pdlibbuilder Makefile safely
-        src_makefile = Path("resources/pd/Makefile.pdlibbuilder")
-        dst_makefile = self.project_path / "Makefile.pdlibbuilder"
+        # Copy pdlibbuilder Makefile for compilation support
+        src_makefile: Path = Path("resources/pd/Makefile.pdlibbuilder")
+        dst_makefile: Path = self.project_path / "Makefile.pdlibbuilder"
         shutil.copy2(src_makefile, dst_makefile)
+
+        # Render appropriate external template based on type
         if self.is_dsp:
             self.render("pd/dsp-external.c.mako")
         else:
             self.render("pd/external.c.mako")
+
+        # Generate build system and documentation
         self.render("pd/Makefile.mako", "Makefile")
         self.render("pd/README.md.mako", "README.md")
 
