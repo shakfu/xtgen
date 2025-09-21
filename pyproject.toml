@@ -23,7 +23,7 @@ dependencies = [
 
 
 [project.scripts]
-xtgen = "xtgen.core:main"
+xtgen = "xtgen.cli:main"
 
 
 [tool.pytest.ini_options]
