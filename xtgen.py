@@ -74,11 +74,9 @@ externals:
 ```
 
 """
-import argparse
-import os
+
 import shutil
 import subprocess
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
@@ -100,13 +98,16 @@ OUTPUT_DIR = "build"
 # ----------------------------------------------------------------------------
 # UTILITY FUNCTIONS
 
+
 def c_type(type_name: str) -> str:
     """Generate C type name from audio type."""
     return f"t_{type_name}"
 
+
 def lookup_address(symbol: str) -> str:
     """Generate symbol lookup address."""
     return f"&s_{symbol}"
+
 
 def lookup_routine(symbol: str) -> str:
     """Generate symbol lookup routine."""
@@ -119,6 +120,7 @@ def lookup_routine(symbol: str) -> str:
 
 class AudioTypeError(ValueError):
     """Custom exception for audio type validation errors."""
+
     pass
 
 
@@ -174,7 +176,9 @@ class TypeMapper:
             AudioTypeError: If type_name is not supported
         """
         if type_name not in cls.TYPE_MAPPINGS:
-            raise AudioTypeError(f"Unknown type mapping for '{type_name}'. Valid types: {list(cls.TYPE_MAPPINGS.keys())}")
+            raise AudioTypeError(
+                f"Unknown type mapping for '{type_name}'. Valid types: {list(cls.TYPE_MAPPINGS.keys())}"
+            )
         return cls.TYPE_MAPPINGS[type_name]
 
     @classmethod
@@ -192,7 +196,9 @@ class TypeMapper:
             AudioTypeError: If type_name is not supported
         """
         if type_name not in cls.FUNC_TYPE_ARGS:
-            raise AudioTypeError(f"Unknown function argument type '{type_name}'. Valid types: {list(cls.FUNC_TYPE_ARGS.keys())}")
+            raise AudioTypeError(
+                f"Unknown function argument type '{type_name}'. Valid types: {list(cls.FUNC_TYPE_ARGS.keys())}"
+            )
         return cls.FUNC_TYPE_ARGS[type_name]
 
 
@@ -217,6 +223,7 @@ class ArgumentBuilder:
         >>> builder.build_constructor_args([Param('step', 'float')])
         't_floatarg f0'
     """
+
     type_mapper: TypeMapper
 
     def __init__(self, type_mapper: TypeMapper) -> None:
@@ -228,7 +235,7 @@ class ArgumentBuilder:
         """
         self.type_mapper = type_mapper
 
-    def build_constructor_args(self, args: List['Param']) -> str:
+    def build_constructor_args(self, args: List["Param"]) -> str:
         """
         Build C constructor arguments for external creation.
 
@@ -254,7 +261,7 @@ class ArgumentBuilder:
             # Use A_GIMME for many arguments
             return "t_symbol *s, int argc, t_atom *argv"
 
-    def build_type_signature(self, args: List['Param']) -> str:
+    def build_type_signature(self, args: List["Param"]) -> str:
         """
         Build PureData class type signature for registration.
 
@@ -330,6 +337,7 @@ class CodeGenerator:
         >>> generator.generate_class_addmethod('counter', 'bang', 'bang')
         'class_addbang(counter_class, counter_bang)'
     """
+
     type_mapper: TypeMapper
     arg_builder: ArgumentBuilder
 
@@ -344,7 +352,9 @@ class CodeGenerator:
         self.type_mapper = type_mapper
         self.arg_builder = arg_builder
 
-    def generate_class_addmethod(self, external_name: str, method_name: str, method_type: str) -> str:
+    def generate_class_addmethod(
+        self, external_name: str, method_name: str, method_type: str
+    ) -> str:
         """
         Generate class_add method call for type methods.
 
@@ -361,7 +371,9 @@ class CodeGenerator:
         """
         return f"class_add{method_type}({external_name}_class, {external_name}_{method_type})"
 
-    def generate_message_addmethod(self, external_name: str, method_name: str, params: List[str]) -> str:
+    def generate_message_addmethod(
+        self, external_name: str, method_name: str, params: List[str]
+    ) -> str:
         """
         Generate class_addmethod call for message methods.
 
@@ -394,7 +406,9 @@ class CodeGenerator:
                 mappings.append(mapping)
             return f"{prefix}, {', '.join(mappings)}, 0)"
 
-    def generate_creator_call(self, external_name: str, alias: Optional[str], type_signature: str) -> str:
+    def generate_creator_call(
+        self, external_name: str, alias: Optional[str], type_signature: str
+    ) -> str:
         """
         Generate class_addcreator call for external alias.
 
@@ -422,12 +436,15 @@ class CodeGenerator:
 @dataclass
 class AbstractType:
     """Base class for audio external types."""
+
     name: str
     VALID_TYPES: List[str] = field(default_factory=list, init=False)
 
     def __post_init__(self):
         if self.name not in self.VALID_TYPES:
-            raise AudioTypeError(f"Invalid type '{self.name}'. Valid types: {self.VALID_TYPES}")
+            raise AudioTypeError(
+                f"Invalid type '{self.name}'. Valid types: {self.VALID_TYPES}"
+            )
 
     def __str__(self) -> str:
         return self.name
@@ -436,7 +453,11 @@ class AbstractType:
 @dataclass
 class ScalarType(AbstractType):
     """Scalar audio types: bang, float, symbol, pointer, signal."""
-    VALID_TYPES: List[str] = field(default_factory=lambda: ["bang", "float", "symbol", "pointer", "signal"], init=False)
+
+    VALID_TYPES: List[str] = field(
+        default_factory=lambda: ["bang", "float", "symbol", "pointer", "signal"],
+        init=False,
+    )
 
     @property
     def c_type(self) -> str:
@@ -471,7 +492,10 @@ class ScalarType(AbstractType):
 @dataclass
 class CompoundType(AbstractType):
     """Compound audio types: list, anything."""
-    VALID_TYPES: List[str] = field(default_factory=lambda: ["list", "anything"], init=False)
+
+    VALID_TYPES: List[str] = field(
+        default_factory=lambda: ["list", "anything"], init=False
+    )
 
     @property
     def c_type(self) -> str:
@@ -503,7 +527,8 @@ class CompoundType(AbstractType):
 @dataclass
 class TypeMethod:
     """Represents a type method for an external (bang, float, etc.)."""
-    parent: 'External'
+
+    parent: "External"
     type: str
     doc: str = ""
 
@@ -511,7 +536,9 @@ class TypeMethod:
 
     def __post_init__(self):
         if self.type not in self.VALID_TYPES:
-            raise AudioTypeError(f"Invalid type method '{self.type}'. Valid types: {self.VALID_TYPES}")
+            raise AudioTypeError(
+                f"Invalid type method '{self.type}'. Valid types: {self.VALID_TYPES}"
+            )
 
     @property
     def name(self) -> str:
@@ -530,11 +557,13 @@ class TypeMethod:
             "symbol": ", t_symbol *s",
             "pointer": ", t_gpointer *pt",
             "list": ", t_symbol *s, int argc, t_atom *argv",
-            "anything": ", t_symbol *s, int argc, t_atom *argv"
+            "anything": ", t_symbol *s, int argc, t_atom *argv",
         }
 
         if self.type not in type_args_map:
-            raise AudioTypeError(f"Argument generation not implemented for type '{self.type}'")
+            raise AudioTypeError(
+                f"Argument generation not implemented for type '{self.type}'"
+            )
 
         return base_arg + type_args_map[self.type]
 
@@ -549,7 +578,8 @@ class TypeMethod:
 @dataclass
 class MessageMethod:
     """Represents a message method for an external."""
-    parent: 'External'
+
+    parent: "External"
     name: str
     params: List[str] = field(default_factory=list)
     doc: str = ""
@@ -570,7 +600,8 @@ class MessageMethod:
 @dataclass
 class Param:
     """Represents a parameter of an external."""
-    parent: 'External'
+
+    parent: "External"
     name: str
     type: str
     initial: Union[float, int, str]
@@ -591,7 +622,9 @@ class Param:
 
     def __post_init__(self):
         if self.type not in self.C_TYPES:
-            raise AudioTypeError(f"Invalid parameter type '{self.type}'. Valid types: {list(self.C_TYPES.keys())}")
+            raise AudioTypeError(
+                f"Invalid parameter type '{self.type}'. Valid types: {list(self.C_TYPES.keys())}"
+            )
 
     @property
     def pd_type(self) -> str:
@@ -607,7 +640,8 @@ class Param:
 @dataclass
 class Outlet:
     """Represents an outlet of an external."""
-    parent: 'External'
+
+    parent: "External"
     name: str
     type: str
 
@@ -615,12 +649,15 @@ class Outlet:
         # Basic validation - could be expanded
         valid_outlet_types = ["float", "bang", "symbol", "list", "anything"]
         if self.type not in valid_outlet_types:
-            raise AudioTypeError(f"Invalid outlet type '{self.type}'. Valid types: {valid_outlet_types}")
+            raise AudioTypeError(
+                f"Invalid outlet type '{self.type}'. Valid types: {valid_outlet_types}"
+            )
 
 
 @dataclass
 class External:
     """Represents an audio external with all its components."""
+
     # Core identification
     name: str
     namespace: str
@@ -686,7 +723,7 @@ class External:
                 has_inlet=param_data.get("inlet", False),
                 desc=param_data.get("desc", ""),
                 min=param_data.get("min"),
-                max=param_data.get("max")
+                max=param_data.get("max"),
             )
             result.append(param)
         return result
@@ -704,12 +741,18 @@ class External:
     @property
     def outlet_objects(self) -> List[Outlet]:
         """Convert raw outlet data to Outlet objects."""
-        return [Outlet(parent=self, name=o["name"], type=o["type"]) for o in self.outlets_data]
+        return [
+            Outlet(parent=self, name=o["name"], type=o["type"])
+            for o in self.outlets_data
+        ]
 
     @property
     def type_method_objects(self) -> List[TypeMethod]:
         """Convert raw type method data to TypeMethod objects."""
-        return [TypeMethod(parent=self, type=m["type"], doc=m.get("doc", "")) for m in self.type_methods_data]
+        return [
+            TypeMethod(parent=self, type=m["type"], doc=m.get("doc", ""))
+            for m in self.type_methods_data
+        ]
 
     @property
     def message_method_objects(self) -> List[MessageMethod]:
@@ -720,7 +763,7 @@ class External:
                 parent=self,
                 name=method_data["name"],
                 params=method_data.get("params", []),
-                doc=method_data.get("doc", "")
+                doc=method_data.get("doc", ""),
             )
             result.append(method)
         return result
@@ -767,6 +810,7 @@ class External:
 # ----------------------------------------------------------------------------
 # MAIN CLASS
 
+
 class Generator:
     """
     Base class for managing external project generation and file operations.
@@ -784,7 +828,9 @@ class Generator:
         model: External object created from YAML data
     """
 
-    def __init__(self, spec_yml: Union[str, Path], target_dir: str = OUTPUT_DIR) -> None:
+    def __init__(
+        self, spec_yml: Union[str, Path], target_dir: str = OUTPUT_DIR
+    ) -> None:
         """
         Initialize generator with specification file and target directory.
 
@@ -814,7 +860,9 @@ class Generator:
             subprocess.CalledProcessError: If command fails
         """
         try:
-            result = subprocess.run(command_args, check=True, capture_output=True, text=True)
+            result = subprocess.run(
+                command_args, check=True, capture_output=True, text=True
+            )
             return result.stdout
         except subprocess.CalledProcessError as e:
             print(f"Command failed: {' '.join(command_args)}")
@@ -844,14 +892,19 @@ class Generator:
         if "externals" not in yml_data:
             raise ValueError("YAML file must contain 'externals' key")
 
-        if not isinstance(yml_data["externals"], list) or len(yml_data["externals"]) == 0:
+        if (
+            not isinstance(yml_data["externals"], list)
+            or len(yml_data["externals"]) == 0
+        ):
             raise ValueError("'externals' must be a non-empty list")
 
         ext = yml_data["externals"][0]
         required_fields = ["name", "namespace"]
-        for field in required_fields:
-            if field not in ext:
-                raise ValueError(f"External must contain required field: '{field}'")
+        for required_field in required_fields:
+            if required_field not in ext:
+                raise ValueError(
+                    f"External must contain required field: '{required_field}'"
+                )
 
         # Validate optional fields have correct types
         if "params" in ext and not isinstance(ext["params"], list):
@@ -871,9 +924,11 @@ class Generator:
             if not isinstance(param, dict):
                 raise ValueError("Each parameter must be a dictionary")
             param_required = ["name", "type"]
-            for field in param_required:
-                if field not in param:
-                    raise ValueError(f"Parameter must contain required field: '{field}'")
+            for required_field in param_required:
+                if required_field not in param:
+                    raise ValueError(
+                        f"Parameter must contain required field: '{required_field}'"
+                    )
 
         return True
 
@@ -899,7 +954,9 @@ class Generator:
             with open(self.spec_yml) as f:
                 yml: Dict[str, Any] = yaml.safe_load(f.read())
         except FileNotFoundError:
-            raise FileNotFoundError(f"YAML specification file not found: {self.spec_yml}")
+            raise FileNotFoundError(
+                f"YAML specification file not found: {self.spec_yml}"
+            )
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML syntax in {self.spec_yml}: {e}")
 
@@ -916,17 +973,17 @@ class Generator:
         try:
             # Map YAML data to External dataclass fields
             external_data: Dict[str, Any] = {
-                'name': ext_yml['name'],
-                'namespace': ext_yml['namespace'],
-                'prefix': ext_yml.get('prefix', ''),
-                'alias': ext_yml.get('alias'),
-                'help': ext_yml.get('help'),
-                'n_channels': ext_yml.get('n_channels', 1),
-                'params_data': ext_yml.get('params', []),
-                'outlets_data': ext_yml.get('outlets', []),
-                'message_methods_data': ext_yml.get('message_methods', []),
-                'type_methods_data': ext_yml.get('type_methods', []),
-                'meta': ext_yml.get('meta')
+                "name": ext_yml["name"],
+                "namespace": ext_yml["namespace"],
+                "prefix": ext_yml.get("prefix", ""),
+                "alias": ext_yml.get("alias"),
+                "help": ext_yml.get("help"),
+                "n_channels": ext_yml.get("n_channels", 1),
+                "params_data": ext_yml.get("params", []),
+                "outlets_data": ext_yml.get("outlets", []),
+                "message_methods_data": ext_yml.get("message_methods", []),
+                "type_methods_data": ext_yml.get("type_methods", []),
+                "meta": ext_yml.get("meta"),
             }
             self.model = external = External(**external_data)
         except Exception as e:
@@ -978,9 +1035,13 @@ class MaxProject(Generator):
             self.project_path.mkdir(exist_ok=True)
         except OSError as e:
             if self.project_path.exists():
-                print(f"Warning: {self.project_path} already exists, files may be overwritten")
+                print(
+                    f"Warning: {self.project_path} already exists, files may be overwritten"
+                )
             else:
-                raise OSError(f"Failed to create project directory {self.project_path}: {e}")
+                raise OSError(
+                    f"Failed to create project directory {self.project_path}: {e}"
+                )
 
         # Render appropriate external template based on type
         if self.is_dsp:
@@ -1028,9 +1089,13 @@ class PdProject(Generator):
             self.project_path.mkdir(exist_ok=True)
         except OSError as e:
             if self.project_path.exists():
-                print(f"Warning: {self.project_path} already exists, files may be overwritten")
+                print(
+                    f"Warning: {self.project_path} already exists, files may be overwritten"
+                )
             else:
-                raise OSError(f"Failed to create project directory {self.project_path}: {e}")
+                raise OSError(
+                    f"Failed to create project directory {self.project_path}: {e}"
+                )
 
         # Copy pdlibbuilder Makefile for compilation support
         src_makefile: Path = Path("resources/pd/Makefile.pdlibbuilder")

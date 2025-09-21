@@ -18,9 +18,20 @@ import yaml
 import os
 
 from xtgen import (
-    ScalarType, CompoundType, External, TypeMethod, MessageMethod,
-    Param, Outlet, PdProject, MaxProject, Generator, AudioTypeError,
-    TypeMapper, ArgumentBuilder, CodeGenerator
+    ScalarType,
+    CompoundType,
+    External,
+    TypeMethod,
+    MessageMethod,
+    Param,
+    Outlet,
+    PdProject,
+    MaxProject,
+    Generator,
+    AudioTypeError,
+    TypeMapper,
+    ArgumentBuilder,
+    CodeGenerator,
 )
 
 
@@ -85,26 +96,17 @@ class TestExternalModel:
                     "initial": 0.5,
                     "arg": True,
                     "inlet": True,
-                    "desc": "step size"
+                    "desc": "step size",
                 }
             ],
             "outlets_data": [
                 {"name": "f", "type": "float"},
-                {"name": "b", "type": "bang"}
+                {"name": "b", "type": "bang"},
             ],
             "message_methods_data": [
-                {
-                    "name": "reset",
-                    "params": [],
-                    "doc": "reset counter to zero"
-                }
+                {"name": "reset", "params": [], "doc": "reset counter to zero"}
             ],
-            "type_methods_data": [
-                {
-                    "type": "bang",
-                    "doc": "increment counter"
-                }
-            ]
+            "type_methods_data": [{"type": "bang", "doc": "increment counter"}],
         }
 
     def test_external_creation(self, sample_external_data: Dict[str, Any]) -> None:
@@ -121,7 +123,7 @@ class TestExternalModel:
         assert len(params) == 1
         assert params[0].name == "step"
         assert params[0].type == "float"
-        assert params[0].is_arg == True
+        assert params[0].is_arg
 
     def test_external_outlets(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External outlets property."""
@@ -158,15 +160,19 @@ class TestMethodGeneration:
             message_methods_data=[
                 {"name": "simple", "params": [], "doc": "simple method"},
                 {"name": "with_float", "params": ["float"], "doc": "method with float"},
-                {"name": "with_multiple", "params": ["float", "symbol"], "doc": "method with multiple params"}
+                {
+                    "name": "with_multiple",
+                    "params": ["float", "symbol"],
+                    "doc": "method with multiple params",
+                },
             ],
             type_methods_data=[
                 {"type": "bang", "doc": "bang handler"},
                 {"type": "float", "doc": "float handler"},
-                {"type": "list", "doc": "list handler"}
+                {"type": "list", "doc": "list handler"},
             ],
             params_data=[],
-            outlets_data=[]
+            outlets_data=[],
         )
 
     def test_type_method_args(self, external_with_methods: External) -> None:
@@ -189,7 +195,9 @@ class TestMethodGeneration:
         simple: MessageMethod = next(m for m in msg_methods if m.name == "simple")
         assert simple.args == "t_test *x"
 
-        with_float: MessageMethod = next(m for m in msg_methods if m.name == "with_float")
+        with_float: MessageMethod = next(
+            m for m in msg_methods if m.name == "with_float"
+        )
         assert "t_floatarg f0" in with_float.args
 
 
@@ -211,14 +219,14 @@ externals:
         # Create file with specific name so we can test name detection
         temp_dir: str = tempfile.mkdtemp()
         yaml_path: Path = Path(temp_dir) / "simple.yml"
-        with open(yaml_path, 'w') as f:
+        with open(yaml_path, "w") as f:
             f.write(yaml_content)
 
         try:
             generator: Generator = Generator(yaml_path)
             assert generator.name == "simple"
             assert generator.fullname == "simple"
-            assert generator.is_dsp == False
+            assert not generator.is_dsp
         finally:
             shutil.rmtree(temp_dir)
 
@@ -236,12 +244,12 @@ externals:
 """
         temp_dir: str = tempfile.mkdtemp()
         yaml_path: Path = Path(temp_dir) / "osc~.yml"
-        with open(yaml_path, 'w') as f:
+        with open(yaml_path, "w") as f:
             f.write(yaml_content)
 
         try:
             generator: Generator = Generator(yaml_path)
-            assert generator.is_dsp == True
+            assert generator.is_dsp
             assert generator.name == "osc"
         finally:
             shutil.rmtree(temp_dir)
@@ -294,7 +302,7 @@ externals:
       features: ["simple test"]
 """
         yaml_path: Path = Path(temp_dir) / "testobj.yml"
-        with open(yaml_path, 'w') as f:
+        with open(yaml_path, "w") as f:
             f.write(yaml_content)
         return yaml_path
 
@@ -311,7 +319,9 @@ externals:
         assert (project_dir / "README.md").exists()
         assert (project_dir / "Makefile.pdlibbuilder").exists()
 
-    def test_max_project_generation(self, sample_yaml_file: Path, temp_dir: str) -> None:
+    def test_max_project_generation(
+        self, sample_yaml_file: Path, temp_dir: str
+    ) -> None:
         """Test Max/MSP project generation."""
         project: MaxProject = MaxProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
@@ -322,7 +332,9 @@ externals:
         assert (project_dir / "testobj.c").exists()
         assert (project_dir / "README.md").exists()
 
-    def test_generated_c_file_content(self, sample_yaml_file: Path, temp_dir: str) -> None:
+    def test_generated_c_file_content(
+        self, sample_yaml_file: Path, temp_dir: str
+    ) -> None:
         """Test that generated C file contains expected content."""
         project: PdProject = PdProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
@@ -392,7 +404,7 @@ class TestHelperClasses:
             "params_data": [],
             "outlets_data": [],
             "message_methods_data": [],
-            "type_methods_data": []
+            "type_methods_data": [],
         }
 
         external: External = External(**external_data)
@@ -420,7 +432,7 @@ class TestErrorHandling:
     def test_invalid_yaml_content(self) -> None:
         """Test handling of invalid YAML content."""
         yaml_content: str = "invalid: yaml: content: ["
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
             f.write(yaml_content)
             yaml_path: str = f.name
 
