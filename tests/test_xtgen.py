@@ -13,7 +13,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Dict, Any, List, Generator as TypingGenerator
+from typing import Dict, Any, List, Optional, Generator as TypingGenerator
 import os
 import json
 
@@ -36,6 +36,9 @@ from xtgen.templates import (
     Generator,
     PdProject,
     MaxProject,
+    ClapProject,
+    VcvProject,
+    TARGETS,
     YAML_AVAILABLE,
 )
 from xtgen.cli import (
@@ -1025,7 +1028,7 @@ class TestCommandLineInterface:
         """Test that argument parser is created correctly."""
         parser = create_argument_parser()
         assert parser.prog == "xtgen"
-        assert parser.description is not None and "Generate PureData and Max/MSP external projects" in parser.description
+        assert parser.description is not None and "Generate PureData, Max/MSP, CLAP/VST3/AU and VCV Rack projects" in parser.description
 
     def test_validate_specification_function(self) -> None:
         """Test the validate_specification function."""
@@ -1234,6 +1237,180 @@ externals:
         temp_dir: str = tempfile.mkdtemp()
         yield temp_dir
         shutil.rmtree(temp_dir)
+
+
+PLUGIN_META = {"desc": "d", "features": ["f"], "author": "a", "repo": "r"}
+
+
+def write_plugin_spec(path: Path, **ext: Any) -> Path:
+    """Write a one-external JSON spec with plugin defaults overridden by `ext`."""
+    data: Dict[str, Any] = {"namespace": "my", "name": path.stem.strip("~"), "meta": PLUGIN_META}
+    data.update(ext)
+    path.write_text(json.dumps({"externals": [data]}))
+    return path
+
+
+def run(args: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None) -> None:
+    """Run a command, failing the test with its stderr."""
+    import subprocess
+
+    result = subprocess.run(args, capture_output=True, text=True, cwd=cwd, env=env)
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
+class TestPluginTargets:
+    """CLAP and VCV Rack targets."""
+
+    GAIN = get_test_resource_path("resources/examples/gain.yml")
+    CLAP_DIR = Path(__file__).parent / "clap"
+
+    def test_registry_lists_all_targets(self) -> None:
+        assert TARGETS == {
+            "pd": PdProject, "max": MaxProject, "clap": ClapProject, "vcv": VcvProject,
+        }
+        parser = create_argument_parser()
+        for target in TARGETS:
+            assert parser.parse_args(["-t", target]).target == target
+
+    @pytest.mark.parametrize("target", ["clap", "vcv"])
+    def test_cli_generates_gain_example(self, tmp_path: Path, target: str) -> None:
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["xtgen", "-q", "-t", target, "-o", str(tmp_path), str(self.GAIN)]):
+            assert main() == 0
+        expected = {
+            "clap": ["gain.c", "gain_entry.cpp", "CMakeLists.txt", "README.md"],
+            "vcv": ["plugin.json", "Makefile", "README.md", "src/plugin.hpp",
+                    "src/plugin.cpp", "src/Gain.cpp", "res/Gain.svg"],
+        }[target]
+        for name in expected:
+            assert (tmp_path / "gain" / name).is_file(), name
+
+    @pytest.mark.parametrize("target", ["clap", "vcv"])
+    def test_counter_example_rejected(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], target: str
+    ) -> None:
+        """Pd-only fields fail both --validate and generation, naming the fields."""
+        import sys
+        from unittest.mock import patch
+
+        counter = get_test_resource_path("resources/examples/counter.yml")
+        for args in (["--validate"], ["-o", str(tmp_path)]):
+            with patch.object(sys, "argv", ["xtgen", "-t", target, *args, str(counter)]):
+                assert main() == 1
+            err = capsys.readouterr().err
+            assert f"not supported by the {target} target" in err
+            assert "'outlets'" in err and "'alias'" in err
+        assert not (tmp_path / "counter").exists()
+
+    def test_validate_uses_target_rules(self) -> None:
+        counter = get_test_resource_path("resources/examples/counter.yml")
+        assert validate_specification(counter, target="pd")
+        assert not validate_specification(counter, target="clap")
+        assert validate_specification(self.GAIN, target="clap")
+
+    @pytest.mark.parametrize(
+        "ext, error",
+        [
+            ({"params": [{"name": "s", "type": "symbol", "min": 0, "max": 1}]}, "only float params"),
+            ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1, "arg": True}]}, "'arg' is not supported"),
+            ({"params": [{"name": "p", "type": "float", "max": 1}]}, "must set 'min'"),
+            ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1, "initial": 2}]}, "min <= initial <= max"),
+            ({"params": [{"name": "p", "type": "float", "min": 1, "max": 1, "initial": 1}]}, "min < max"),
+            ({"params": [{"name": "p", "type": "float", "min": "0", "max": 1}]}, "finite numbers"),
+            ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1e999}]}, "finite numbers"),
+            ({"params": [{"name": "p-q", "type": "float", "min": 0, "max": 1}]}, "ASCII identifier"),
+            ({"name": "my-gain"}, "'name' must be an ASCII identifier"),
+            ({"namespace": "a.b"}, "'namespace' must be an ASCII identifier"),
+            ({"n_channels": 0}, "positive integer"),
+            ({"help": "help-x"}, "'help'"),
+        ],
+    )
+    @pytest.mark.parametrize("target", ["clap", "vcv"])
+    def test_plugin_spec_rejected(
+        self, tmp_path: Path, target: str, ext: Dict[str, Any], error: str
+    ) -> None:
+        spec = write_plugin_spec(tmp_path / "x.json", **ext)
+        project = TARGETS[target](spec, target_dir=str(tmp_path))
+        with pytest.raises(ValueError, match=error):
+            project.generate()
+        assert not (tmp_path / "x").exists()
+
+    @pytest.mark.parametrize("target", ["clap", "vcv"])
+    def test_tilde_filename_ignored(self, tmp_path: Path, target: str) -> None:
+        """Plugins always process audio; '~' is dropped from paths."""
+        spec = tmp_path / "gain~.yml"
+        shutil.copy(self.GAIN, spec)
+        TARGETS[target](spec, target_dir=str(tmp_path)).generate()
+        assert (tmp_path / "gain").is_dir()
+        assert not (tmp_path / "gain~").exists()
+
+    def test_vcv_manifest_escapes_strings(self, tmp_path: Path) -> None:
+        meta = dict(PLUGIN_META, author='a "q" \\ b', desc="line one\nline two\n")
+        spec = write_plugin_spec(tmp_path / "gain.json", meta=meta)
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        manifest = json.loads((tmp_path / "gain" / "plugin.json").read_text())
+        assert manifest["author"] == 'a "q" \\ b'
+        assert manifest["modules"][0] == {
+            "slug": "Gain", "name": "gain", "description": "line one line two", "tags": ["Effect"],
+        }
+
+    def test_vcv_panel_widens_with_rows(self, tmp_path: Path) -> None:
+        """7 rows per 4 HP column pair: 9 params + 1 channel need 2 pairs = 9 HP."""
+        params = [{"name": f"p{i}", "type": "float", "min": 0, "max": 1} for i in range(9)]
+        spec = write_plugin_spec(tmp_path / "wide.json", params=params)
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        assert 'width="45.72mm"' in (tmp_path / "wide" / "res" / "Wide.svg").read_text()
+
+    CLAP_SPECS = [
+        pytest.param({}, id="gain-example"),
+        pytest.param({"n_channels": 1, "params": []}, id="mono-no-params"),
+        pytest.param(
+            {
+                "n_channels": 3,
+                "params": [{"name": "drive", "type": "float", "min": -1e-05, "max": 24, "initial": 0}],
+                "meta": dict(PLUGIN_META, author='a "q" \\ b', desc="two\nlines"),
+            },
+            id="three-channels-escaped-meta",
+        ),
+    ]
+
+    @pytest.mark.parametrize("ext", CLAP_SPECS)
+    def test_clap_plugin_runs_in_host(self, tmp_path: Path, ext: Dict[str, Any]) -> None:
+        """Generated CLAP compiles warning-free and passes tests/clap/host.c."""
+        cc, cxx = shutil.which("cc"), shutil.which("c++")
+        if cc is None or cxx is None:
+            pytest.skip("no C/C++ compiler")
+        if ext:
+            spec = write_plugin_spec(tmp_path / "gain.json", **ext)
+        else:
+            spec = tmp_path / "gain.yml"
+            shutil.copy(self.GAIN, spec)
+        ClapProject(spec, target_dir=str(tmp_path)).generate()
+
+        src = tmp_path / "gain"
+        inc = ["-I", str(self.CLAP_DIR / "include")]
+        warn = ["-Wall", "-Wextra", "-Werror"]
+        run([cc, "-std=c11", "-Wpedantic", *warn, *inc, "-c", str(src / "gain.c"), "-o", str(src / "gain.o")])
+        run([cxx, "-std=c++17", *warn, *inc, "-c", str(src / "gain_entry.cpp"), "-o", str(src / "entry.o")])
+        run([cc, "-std=c11", *warn, *inc, "-c", str(self.CLAP_DIR / "host.c"), "-o", str(src / "host.o")])
+        run([cxx, "-o", str(src / "host"), str(src / "host.o"), str(src / "gain.o"), str(src / "entry.o")])
+        run([str(src / "host"), "my.gain"])
+
+    @pytest.mark.skipif(not os.environ.get("RACK_DIR"), reason="RACK_DIR (Rack SDK path) not set")
+    @pytest.mark.parametrize("ext", CLAP_SPECS)
+    def test_vcv_plugin_builds(self, tmp_path: Path, ext: Dict[str, Any]) -> None:
+        """Generated VCV plugin builds against the Rack SDK at $RACK_DIR."""
+        if ext:
+            spec = write_plugin_spec(tmp_path / "gain.json", **ext)
+        else:
+            spec = tmp_path / "gain.yml"
+            shutil.copy(self.GAIN, spec)
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        # plugin.mk appends to FLAGS, so an environment value is kept.
+        env = dict(os.environ, FLAGS="-Werror")
+        run(["make", f"RACK_DIR={os.environ['RACK_DIR']}"], cwd=tmp_path / "gain", env=env)
 
 
 if __name__ == "__main__":

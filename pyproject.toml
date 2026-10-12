@@ -1,7 +1,7 @@
 [project]
 name = "xtgen"
-version = "0.1.2"
-description = "A modern, type-safe tool to generate skeleton PureData and Max/MSP external files"
+version = "0.2.0"
+description = "A modern, type-safe tool to generate skeleton PureData and Max/MSP externals, CLAP/VST3/AUv2 plugins, and VCV Rack modules"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "MIT"

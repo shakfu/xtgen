@@ -1,10 +1,11 @@
 """Template rendering and project generation for xtgen externals.
 
 This module contains the project generator classes responsible for rendering
-templates and creating complete external projects for both PureData and Max/MSP.
+templates and creating complete projects for each target in TARGETS.
 """
 
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -364,11 +365,164 @@ class Generator:
         target: Path = self.project_path / outfile
 
         try:
+            target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "w") as f:
                 f.write(rendered)
             print(target, "rendered")
         except Exception as e:
             raise ValueError(f"Failed to write output file {target}: {e}")
+
+
+class PluginProject(Generator):
+    """Base for plugin targets, which have no Pd object model.
+
+    Plugins always process audio, so a '~' in the spec filename is dropped
+    rather than switching to a DSP template.
+    """
+
+    # Pd/Max object-model fields with no plugin equivalent.
+    PD_ONLY_KEYS = ("prefix", "alias", "help", "outlets", "message_methods", "type_methods")
+    TARGET = "plugin"  # name used in error messages
+
+    def __init__(
+        self, spec_file: Union[str, Path], target_dir: str = OUTPUT_DIR
+    ) -> None:
+        super().__init__(spec_file, target_dir)
+        self.is_dsp = False
+        self.fullname = self.name
+        self.project_path = self.target_dir / self.name
+
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
+        """Validate as for Pd, then reject fields the plugin target cannot express.
+
+        Raises:
+            ValueError: If the specification uses Pd-only fields or invalid params
+        """
+        super().validate_specification_structure(spec_data)
+        ext = spec_data["externals"][0]
+        target = self.TARGET
+
+        pd_only = [k for k in self.PD_ONLY_KEYS if k in ext]
+        if pd_only:
+            raise ValueError(
+                f"Field(s) not supported by the {target} target: "
+                f"{', '.join(map(repr, pd_only))}"
+            )
+        # Names become C/C++ identifiers, plugin ids and VCV slugs.
+        for key in ("name", "namespace"):
+            if not (isinstance(ext[key], str) and ext[key].isascii() and ext[key].isidentifier()):
+                raise ValueError(f"'{key}' must be an ASCII identifier, got {ext[key]!r}")
+        n_channels = ext.get("n_channels", 1)
+        if type(n_channels) is not int or n_channels < 1:
+            raise ValueError(f"'n_channels' must be a positive integer, got {n_channels!r}")
+
+        for p in ext.get("params", []):
+            name = p["name"]
+            if not (isinstance(name, str) and name.isascii() and name.isidentifier()):
+                raise ValueError(f"Parameter name must be an ASCII identifier, got {name!r}")
+            if p["type"] != "float":
+                raise ValueError(
+                    f"Parameter '{name}': the {target} target supports only float params"
+                )
+            if p.get("arg"):
+                raise ValueError(
+                    f"Parameter '{name}': 'arg' is not supported by the {target} target"
+                )
+            for bound in ("min", "max"):
+                if bound not in p:
+                    raise ValueError(f"Parameter '{name}' must set '{bound}'")
+            values = (p["min"], p.get("initial", 0), p["max"])
+            if not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+                for v in values
+            ):
+                raise ValueError(
+                    f"Parameter '{name}': min, initial and max must be finite numbers"
+                )
+            if not values[0] <= values[1] <= values[2] or values[0] == values[2]:
+                raise ValueError(
+                    f"Parameter '{name}' needs min < max and min <= initial <= max, "
+                    f"got min={values[0]}, initial={values[1]}, max={values[2]}"
+                )
+        return True
+
+
+class ClapProject(PluginProject):
+    """Generator for CLAP plugins; CMake wraps the CLAP as VST3 and AUv2.
+
+    Example:
+        >>> ClapProject('gain.yml').generate()
+        # Creates build/gain/ with gain.c, gain_entry.cpp, CMakeLists.txt
+    """
+
+    TARGET = "clap"
+
+    def generate(self, force: bool = False) -> None:
+        """Generate the CLAP project.
+
+        Raises:
+            FileExistsError: If project directory is non-empty and force is False
+            OSError: If project directory cannot be created
+            ValueError: If the specification is invalid or rendering fails
+        """
+        self.make_project_dir(force)
+        self.render("clap/plugin.c.mako")
+        self.render("clap/entry.cpp.mako", f"{self.name}_entry.cpp")
+        self.render("clap/CMakeLists.txt.mako", "CMakeLists.txt")
+        self.render("clap/README.md.mako", "README.md")
+
+
+class VcvProject(PluginProject):
+    """Generator for VCV Rack 2 plugins with one module.
+
+    Example:
+        >>> VcvProject('gain.yml').generate()
+        # Creates build/gain/ with plugin.json, Makefile, src/, res/
+    """
+
+    TARGET = "vcv"
+
+    def generate(self, force: bool = False) -> None:
+        """Generate the VCV Rack plugin project.
+
+        Raises:
+            FileExistsError: If project directory is non-empty and force is False
+            OSError: If project directory cannot be created
+            ValueError: If the specification is invalid or rendering fails
+        """
+        self.make_project_dir(force)
+        shutil.copy2(
+            get_package_resource_path("resources/vcv/Makefile"), self.project_path / "Makefile"
+        )
+        module = self.name[0].upper() + self.name[1:]
+        self.render("vcv/plugin.hpp.mako", "src/plugin.hpp")
+        self.render("vcv/plugin.cpp.mako", "src/plugin.cpp")
+        self.render("vcv/module.cpp.mako", f"src/{module}.cpp")
+        self.render("vcv/panel.svg.mako", f"res/{module}.svg")
+        self.render("vcv/README.md.mako", "README.md")
+
+        # Written with json.dumps, not a template, so spec strings are escaped.
+        assert self.model is not None and self.model.meta is not None
+        meta = self.model.meta
+        manifest = {
+            "slug": self.model.namespace,
+            "name": self.model.namespace,
+            "version": "2.0.0",
+            "brand": self.model.namespace,
+            "author": meta["author"],
+            "sourceUrl": meta["repo"],
+            "modules": [
+                {
+                    "slug": module,
+                    "name": self.model.name,
+                    "description": " ".join(str(meta["desc"]).split()),
+                    "tags": ["Effect"],
+                }
+            ],
+        }
+        target = self.project_path / "plugin.json"
+        target.write_text(json.dumps(manifest, indent=2) + "\n")
+        print(target, "rendered")
 
 
 class MaxProject(Generator):
@@ -458,3 +612,11 @@ class PdProject(Generator):
         # Generate build system and documentation
         self.render("pd/Makefile.mako", "Makefile")
         self.render("pd/README.md.mako", "README.md")
+
+# CLI target name -> generator class.
+TARGETS: Dict[str, type[Generator]] = {
+    "pd": PdProject,
+    "max": MaxProject,
+    "clap": ClapProject,
+    "vcv": VcvProject,
+}

@@ -28,6 +28,17 @@ def lookup_routine(symbol: str) -> str:
     return f'gensym("{symbol}")'
 
 
+def c_string(s: str) -> str:
+    """Return `s` as a quoted C string literal.
+
+    Raises:
+        AudioTypeError: If `s` contains a control character
+    """
+    if any(ord(c) < 32 for c in s):
+        raise AudioTypeError(f"Control character in C string: {s!r}")
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 @dataclass
 class AbstractType:
     """Base class for audio external types."""
@@ -233,13 +244,12 @@ class Param:
         """Generate C expression for the initial value."""
         if self.type != "symbol":
             return str(self.initial)
-        s = str(self.initial)
-        if any(ord(c) < 32 for c in s):
+        try:
+            return f"gensym({c_string(str(self.initial))})"
+        except AudioTypeError:
             raise AudioTypeError(
                 f"Control character in initial value of symbol param '{self.name}'"
-            )
-        s = s.replace("\\", "\\\\").replace('"', '\\"')
-        return f'gensym("{s}")'
+            ) from None
 
 
 @dataclass

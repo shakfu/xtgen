@@ -1,6 +1,6 @@
 # xtgen
 
-A modern, type-safe Python package for generating skeleton PureData and Max/MSP external files from YAML or JSON specifications.
+A modern, type-safe Python package for generating skeleton PureData and Max/MSP externals, CLAP/VST3/AUv2 plugins, and VCV Rack modules from YAML or JSON specifications.
 
 ## Features
 
@@ -12,6 +12,10 @@ A modern, type-safe Python package for generating skeleton PureData and Max/MSP 
 
 - **Generate Max/MSP external projects** with proper SDK structure
 
+- **Generate CLAP plugins** in C, with a CMake build that also produces VST3, and AUv2 on macOS, via [clap-wrapper](https://github.com/free-audio/clap-wrapper)
+
+- **Generate VCV Rack 2 plugins** with one module, a Makefile, and a blank panel
+
 - **Template-based code generation** using Mako templates
 
 - **Type-safe specification parsing** (YAML and JSON formats)
@@ -20,11 +24,13 @@ A modern, type-safe Python package for generating skeleton PureData and Max/MSP 
 
 - **Validation mode** to check specifications without generating
 
-- **Comprehensive test coverage** (38 tests)
+- **Test suite** of 122 tests, including compile-and-run tests of generated CLAP plugins
 
 - **Support for both regular and DSP** (signal processing) externals
 
 - **Bundled resources** (templates, examples, headers included in package)
+
+See [CHANGELOG.md](CHANGELOG.md) for changes.
 
 ## Installation
 
@@ -63,20 +69,21 @@ The package requires:
 The easiest way to use xtgen is through its command-line interface:
 
 ```sh
-usage: xtgen [-h] [-t {pd,max}] [-o DIR] [-v] [-q] [-f] [--list-examples]
-             [--validate]
+usage: xtgen [-h] [-t {pd,max,clap,vcv}] [-o DIR] [-v] [-q] [-f]
+             [--list-examples] [--validate]
              [spec_file]
 
-Generate PureData and Max/MSP external projects from YAML or JSON specifications
+Generate PureData, Max/MSP, CLAP/VST3/AU and VCV Rack projects from YAML or JSON specifications
 
 positional arguments:
   spec_file             Path to YAML or JSON specification file (default: counter.yml from examples)
 
 options:
   -h, --help            show this help message and exit
-  -t, --target {pd,max}
-                        Target platform: 'pd' for PureData, 'max' for Max/MSP
-                        (default: pd)
+  -t, --target {pd,max,clap,vcv}
+                        Target platform: 'pd' (PureData), 'max' (Max/MSP),
+                        'clap' (CLAP, wrapped as VST3/AUv2 by CMake), 'vcv'
+                        (VCV Rack 2) (default: pd)
   -o, --output DIR      Output directory for generated projects (default: build)
   -v, --verbose         Enable verbose output with detailed generation information
   -q, --quiet           Suppress all output except errors
@@ -88,6 +95,8 @@ Examples:
   xtgen counter.yml                    # Generate PD project from YAML
   xtgen counter.json                   # Generate PD project from JSON
   xtgen -t max counter.yml             # Generate Max/MSP project
+  xtgen -t clap gain.yml               # Generate CLAP project (VST3/AU via CMake)
+  xtgen -t vcv gain.yml                # Generate VCV Rack plugin
   xtgen -o /tmp/build counter.yml      # Custom output directory
   xtgen -v counter.yml                 # Verbose output
   xtgen --list-examples                # List available examples
@@ -138,7 +147,7 @@ python -m xtgen -o /tmp/my-externals counter.yml
 
 #### CLI Options
 
-- `-t, --target {pd,max}` - Target platform (default: pd)
+- `-t, --target {pd,max,clap,vcv}` - Target platform (default: pd)
 
 - `-o, --output DIR` - Output directory (default: build)
 
@@ -171,6 +180,11 @@ project.generate()
 # Generate with custom output directory
 project = PdProject('spec.yml', target_dir='custom_output')
 project.generate()
+
+# Plugin targets; TARGETS maps CLI names to these classes
+from xtgen import ClapProject, VcvProject
+ClapProject('gain.yml').generate()
+VcvProject('gain.yml').generate()
 ```
 
 ### Project Compilation
@@ -183,6 +197,14 @@ make -C build/counter
 
 # For Max/MSP projects (requires Max SDK)
 # Follow Max SDK build instructions
+
+# For CLAP projects: builds .clap and .vst3 (+ .component on macOS).
+# The first configure downloads CLAP, clap-wrapper and the VST3/AU SDKs.
+cmake -S build/gain -B build/gain/build -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gain/build --target gain_all
+
+# For VCV Rack projects (requires the Rack SDK)
+make -C build/gain RACK_DIR=/path/to/Rack-SDK
 ```
 
 ## Development
@@ -192,6 +214,8 @@ make -C build/counter
 ```sh
 uv run pytest tests/ -v
 ```
+
+The CLAP test compiles each generated plugin and runs it in `tests/clap/host.c`, against CLAP headers vendored in `tests/clap/include`. The VCV build test runs only when `RACK_DIR` points to a Rack SDK.
 
 ### Type Checking
 
@@ -315,6 +339,24 @@ externals:
 }
 ```
 
+### Plugin Targets
+
+`clap` and `vcv` read a subset of the spec. `resources/examples/gain.yml` is a working example.
+
+- Read: `name`, `namespace`, `n_channels`, `meta`, and `params`.
+
+- Rejected with an error: `prefix`, `alias`, `help`, `outlets`, `message_methods`, `type_methods`, and `arg: true` on a param. These have no plugin equivalent.
+
+- Params must be `type: float` and set finite `min` and `max`, with `min < max` and `min <= initial <= max`.
+
+- `name`, `namespace`, and param names must be ASCII identifiers. They become C identifiers, the CLAP id `namespace.name`, and the VCV slugs.
+
+- `inlet: true` adds a CV input for the param in VCV. CLAP ignores it; every CLAP param is automatable.
+
+- A `~` in the spec filename is ignored. Plugins always process audio.
+
+The CLAP `CMakeLists.txt` derives AUv2 four-character codes from `namespace` and `name`. Replace them before shipping an AU.
+
 ### File Format Detection
 
 - Files with `.yml` or `.yaml` extensions are parsed as YAML
@@ -337,13 +379,17 @@ externals:
 
 - [x] **Max/MSP external project generation** with SDK integration
 
+- [x] **CLAP plugin generation**, wrapped as VST3/AUv2 by clap-wrapper
+
+- [x] **VCV Rack 2 plugin generation**
+
 - [x] **Template-based code generation** system using Mako
 
 - [x] **Support for DSP externals** (signal processing)
 
 - [x] **Comprehensive type system** with validation and error handling
 
-- [x] **Full test coverage** (35 tests including CLI tests)
+- [x] **Test suite** (122 tests, including CLI tests)
 
 - [x] **Type safety** with mypy validation
 

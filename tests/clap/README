@@ -1,0 +1,2 @@
+CLAP 1.2.10 headers (https://github.com/free-audio/clap, MIT, see LICENSE).
+host.c is a minimal test host for generated plugins.

@@ -23,6 +23,10 @@ from .templates import (
     Generator,
     PdProject,
     MaxProject,
+    PluginProject,
+    ClapProject,
+    VcvProject,
+    TARGETS,
     YAML_AVAILABLE,
 )
 from .cli import (
@@ -35,7 +39,7 @@ from .cli import (
 # Backward compatibility - also expose everything from core
 from .core import *
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 __all__ = [
     "ScalarType",
@@ -47,6 +51,10 @@ __all__ = [
     "Outlet",
     "PdProject",
     "MaxProject",
+    "PluginProject",
+    "ClapProject",
+    "VcvProject",
+    "TARGETS",
     "Generator",
     "AudioTypeError",
     "TypeMapper",

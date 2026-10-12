@@ -7,9 +7,8 @@ and entry point for the xtgen external generator tool.
 import argparse
 import sys
 from pathlib import Path
-from typing import Union
 
-from .templates import Generator, PdProject, MaxProject, get_package_resource_path, OUTPUT_DIR
+from .templates import TARGETS, get_package_resource_path, OUTPUT_DIR
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -23,12 +22,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
     # Build description and examples based on YAML availability
     if YAML_AVAILABLE:
-        description = "Generate PureData and Max/MSP external projects from YAML or JSON specifications"
+        description = "Generate PureData, Max/MSP, CLAP/VST3/AU and VCV Rack projects from YAML or JSON specifications"
         examples = """
 Examples:
   %(prog)s counter.yml                    # Generate PD project from YAML
   %(prog)s counter.json                   # Generate PD project from JSON
   %(prog)s -t max counter.yml             # Generate Max/MSP project
+  %(prog)s -t clap gain.yml               # Generate CLAP project (VST3/AU via CMake)
+  %(prog)s -t vcv gain.yml                # Generate VCV Rack plugin
   %(prog)s -o /tmp/build counter.yml      # Custom output directory
   %(prog)s -v counter.yml                 # Verbose output
   %(prog)s --list-examples                # List available examples
@@ -37,7 +38,7 @@ Supported file formats:
   .yml, .yaml  - YAML specification files
   .json        - JSON specification files"""
     else:
-        description = "Generate PureData and Max/MSP external projects from JSON specifications"
+        description = "Generate PureData, Max/MSP, CLAP/VST3/AU and VCV Rack projects from JSON specifications"
         examples = """
 Examples:
   %(prog)s counter.json                   # Generate PD project from JSON
@@ -71,9 +72,10 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
     parser.add_argument(
         "-t",
         "--target",
-        choices=["pd", "max"],
+        choices=list(TARGETS),
         default="pd",
-        help="Target platform: 'pd' for PureData, 'max' for Max/MSP (default: pd)",
+        help="Target platform: 'pd' (PureData), 'max' (Max/MSP), 'clap' (CLAP, "
+        "wrapped as VST3/AUv2 by CMake), 'vcv' (VCV Rack 2) (default: pd)",
     )
 
     # Output directory
@@ -142,12 +144,15 @@ def list_examples() -> None:
     print("\nUsage: xtgen <example_file>")
 
 
-def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
+def validate_specification(
+    spec_file: Path, verbose: bool = False, target: str = "pd"
+) -> bool:
     """Validate a specification file without generating output.
 
     Args:
         spec_file: Path to specification file
         verbose: Enable verbose validation output
+        target: Target whose rules apply (a key of TARGETS)
 
     Returns:
         True if validation passes, False otherwise
@@ -156,7 +161,7 @@ def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
         if verbose:
             print(f"Validating specification file: {spec_file}")
 
-        generator = Generator(spec_file)
+        generator = TARGETS[target](spec_file)
         spec_data = generator.load_specification()
         generator.validate_specification_structure(spec_data)
         generator.build_external(spec_data["externals"][0])
@@ -225,17 +230,10 @@ def main() -> int:
 
     # Handle validation-only mode
     if args.validate:
-        return 0 if validate_specification(spec_file, args.verbose) else 1
+        return 0 if validate_specification(spec_file, args.verbose, args.target) else 1
 
     try:
-        # Create appropriate project generator
-        if args.target == "pd":
-            project: Union[PdProject, MaxProject] = PdProject(spec_file, target_dir=args.output)
-        elif args.target == "max":
-            project = MaxProject(spec_file, target_dir=args.output)
-        else:
-            print(f"Error: Unknown target platform: {args.target}", file=sys.stderr)
-            return 1
+        project = TARGETS[args.target](spec_file, target_dir=args.output)
 
         # Verbose output
         if args.verbose:
