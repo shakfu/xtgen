@@ -5,15 +5,25 @@ A modern, type-safe Python package for generating skeleton PureData and Max/MSP 
 ## Features
 
 - **Python package** with CLI entry point and library interface
+
 - **Command-line interface** with comprehensive options and validation
+
 - **Generate PureData external projects** with complete build system
+
 - **Generate Max/MSP external projects** with proper SDK structure
+
 - **Template-based code generation** using Mako templates
+
 - **Type-safe specification parsing** (YAML and JSON formats)
+
 - **Automatic format detection** with intelligent fallback
+
 - **Validation mode** to check specifications without generating
+
 - **Comprehensive test coverage** (38 tests)
+
 - **Support for both regular and DSP** (signal processing) externals
+
 - **Bundled resources** (templates, examples, headers included in package)
 
 ## Installation
@@ -41,7 +51,9 @@ pip install dist/xtgen-*.whl
 
 The package requires:
 - Python 3.13+
+
 - Mako (templating engine)
+
 - PyYAML (YAML parsing)
 
 ## Usage
@@ -127,11 +139,17 @@ python -m xtgen -o /tmp/my-externals counter.yml
 #### CLI Options
 
 - `-t, --target {pd,max}` - Target platform (default: pd)
+
 - `-o, --output DIR` - Output directory (default: build)
+
 - `-v, --verbose` - Enable verbose output
+
 - `-q, --quiet` - Suppress all output except errors
+
 - `-f, --force` - Force overwrite existing directories
+
 - `--validate` - Validate specification file without generating
+
 - `--list-examples` - List available example files
 
 ### Python Library Usage
@@ -214,6 +232,7 @@ externals:
     help: help-counter
     n_channels: 1
     params:
+
       - name: step
         type: float
         min: 0.0
@@ -223,13 +242,16 @@ externals:
         inlet: true
         desc: "step size"
     outlets:
+
       - name: out
         type: float
     message_methods:
+
       - name: reset
         params: []
         doc: "reset counter to zero"
     type_methods:
+
       - type: bang
         doc: "increment counter"
     meta:
@@ -296,8 +318,11 @@ externals:
 ### File Format Detection
 
 - Files with `.yml` or `.yaml` extensions are parsed as YAML
+
 - Files with `.json` extension are parsed as JSON
+
 - Files with other extensions (or no extension) are automatically detected by trying YAML first, then JSON
+
 - Both formats produce identical results and support all the same features
 
 ## Project Status
@@ -305,28 +330,49 @@ externals:
 ### Completed Features
 
 - [x] **Command-line interface** with argparse-based argument parsing
+
 - [x] **Complete specification parsing** (YAML and JSON) with validation
+
 - [x] **PureData external project generation** with build system
+
 - [x] **Max/MSP external project generation** with SDK integration
+
 - [x] **Template-based code generation** system using Mako
+
 - [x] **Support for DSP externals** (signal processing)
+
 - [x] **Comprehensive type system** with validation and error handling
+
 - [x] **Full test coverage** (35 tests including CLI tests)
+
 - [x] **Type safety** with mypy validation
+
 - [x] **Code quality** with ruff linting and formatting
+
 - [x] **Validation mode** for specification checking
+
 - [x] **Automatic format detection** with intelligent fallback
+
 - [x] **Inlet and outlet generation** with proper type mapping
+
 - [x] **Parameter handling** with constructor arguments
+
 - [x] **Message method generation** with argument type checking
+
 - [x] **Type method generation** (bang, float, symbol, list, etc.)
+
 - [x] **Build system integration** (Makefiles for PD, project files for Max)
+
 - [x] **Documentation generation** (README files)
 
 ### Future Enhancements
 
 - [x] xtgen to become a python package
+
 - [ ] Hybrid dual Max/PD template
+
 - [ ] Additional DSP utility functions
+
 - [ ] Extended help file generation for PureData
+
 - [ ] Plugin packaging and distribution tools
