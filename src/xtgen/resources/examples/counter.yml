@@ -21,14 +21,6 @@ externals:
       author: gpt3
       repo: https://github.com/gpt3/counter.git
 
-    inlets:
-      - name: bound
-        type: list
-      - name: step
-        type: float
-      - name: lower
-        type: float
-
     outlets:
       - name: f
         type: float

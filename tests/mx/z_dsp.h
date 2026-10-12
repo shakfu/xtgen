@@ -1,0 +1,1 @@
+/* Declarations live in the ext.h stub. */

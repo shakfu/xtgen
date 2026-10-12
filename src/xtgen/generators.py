@@ -10,6 +10,8 @@ from typing import List, Dict, Optional
 
 from .models import AudioTypeError
 
+MAXPDARG: int = 5  # m_pd.h: max typed args Pd typechecks
+
 
 class TypeMapper:
     """Handles mapping between audio types and C code representations.
@@ -81,6 +83,15 @@ class TypeMapper:
             )
         return cls.FUNC_TYPE_ARGS[type_name]
 
+    @staticmethod
+    def needs_gimme(types: List[str]) -> bool:
+        """Return True if `types` must register as a single A_GIMME.
+
+        Pd rejects A_GIMME combined with other arg types, and typechecks at most
+        MAXPDARG (5) typed args; class_new/class_addmethod drop the rest.
+        """
+        return len(types) > MAXPDARG or any(t in ("list", "anything") for t in types)
+
 
 @dataclass
 class ArgumentBuilder:
@@ -117,7 +128,7 @@ class ArgumentBuilder:
         """Build C constructor arguments for external creation.
 
         Constructs the argument list for the external's constructor function,
-        handling PureData's limitation of 6 typed arguments before falling
+        handling PureData's limitation of 5 typed arguments before falling
         back to A_GIMME (generic argument parsing).
 
         Args:
@@ -128,15 +139,44 @@ class ArgumentBuilder:
         """
         if len(args) == 0:
             return "void"
-        elif 0 < len(args) <= 6:
+        elif self.type_mapper.needs_gimme([arg.type for arg in args]):
+            return "t_symbol *s, int argc, t_atom *argv"
+        else:
             type_args: List[str] = []
             for i, arg in enumerate(args):
                 func_arg: str = self.type_mapper.get_func_arg(arg.type)
                 type_args.append(func_arg + str(i))
             return ", ".join(type_args)
-        else:
-            # Use A_GIMME for many arguments
-            return "t_symbol *s, int argc, t_atom *argv"
+
+    def build_constructor_assignments(self, args: List["Param"]) -> List[str]:
+        """Build C statements assigning constructor arguments to struct fields.
+
+        Pd passes 0 / &s_ for omitted A_DEFFLOAT / A_DEFSYMBOL args, so typed
+        args only override `initial` when non-default. A_GIMME args use argc.
+
+        Args:
+            args: List of Param objects representing constructor arguments
+
+        Returns:
+            C statements, one per argument, matching build_constructor_args names
+        """
+        if self.type_mapper.needs_gimme([arg.type for arg in args]):
+            getters: Dict[str, str] = {
+                "float": "atom_getfloatarg({i}, argc, argv)",
+                "symbol": "atom_getsymbolarg({i}, argc, argv)",
+            }
+            return [
+                f"if (argc > {i}) x->{arg.name} = {getters[arg.type].format(i=i)};"
+                for i, arg in enumerate(args)
+                if arg.type in getters
+            ]
+        stmts: List[str] = []
+        for i, arg in enumerate(args):
+            if arg.type == "symbol":
+                stmts.append(f"if (s{i} != &s_) x->{arg.name} = s{i};")
+            else:
+                stmts.append(f"if (f{i} != 0) x->{arg.name} = f{i};")
+        return stmts
 
     def build_type_signature(self, args: List["Param"]) -> str:
         """Build PureData class type signature for registration.
@@ -154,14 +194,14 @@ class ArgumentBuilder:
 
         if len(args) == 0:
             return suffix
-        elif 0 < len(args) <= 6:
+        elif self.type_mapper.needs_gimme([arg.type for arg in args]):
+            return "A_GIMME" + suffix
+        else:
             mappings: List[str] = []
             for arg in args:
                 mapping: str = self.type_mapper.get_pd_mapping(arg.type)
                 mappings.append(mapping)
             return ", ".join(mappings) + suffix
-        else:
-            return "A_GIMME" + suffix
 
     def build_method_args(self, external_type: str, params: List[str]) -> str:
         """Build C function arguments for message methods.
@@ -180,7 +220,7 @@ class ArgumentBuilder:
 
         if len(params) == 0:
             return base_arg
-        elif params == ["list"] or len(params) > 6:
+        elif self.type_mapper.needs_gimme(params):
             return f"{base_arg}, t_symbol *s, int argc, t_atom *argv"
         else:
             type_args: List[str] = []
@@ -268,7 +308,7 @@ class CodeGenerator:
 
         if len(params) == 0:
             return f"{prefix}, 0)"
-        elif params == ["list"] or len(params) > 6:
+        elif self.type_mapper.needs_gimme(params):
             return f"{prefix}, A_GIMME, 0)"
         else:
             mappings: List[str] = []

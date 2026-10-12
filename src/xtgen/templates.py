@@ -56,9 +56,10 @@ class Generator:
 
     Attributes:
         spec_yml: Path to the YAML specification file
-        fullname: Full name of the external (including ~ for DSP externals)
+        fullname: Full name of the external (including ~ for DSP externals),
+            reset from the spec's 'name' on render
         name: Clean name without DSP suffix
-        is_dsp: Whether this is a DSP (signal processing) external
+        is_dsp: Whether this is a DSP external (spec filename ends in ~)
         target_dir: Directory where generated files will be placed
         project_path: Full path to the generated project directory
         model: External object created from YAML data
@@ -158,9 +159,38 @@ class Generator:
             else:
                 raise
 
-    def generate(self) -> None:
+    def generate(self, force: bool = False) -> None:
         """Generate the external project. Override this in subclasses."""
         raise NotImplementedError("Subclasses must implement generate()")
+
+    def make_project_dir(self, force: bool = False) -> None:
+        """Validate the specification, then create the project directory.
+
+        Raises:
+            ValueError: If the specification is invalid
+            FileExistsError: If the directory is non-empty and force is False
+            OSError: If the directory cannot be created
+        """
+        # Validate before writing anything, so a bad spec leaves no partial project.
+        spec_data = self.load_specification()
+        self.validate_specification_structure(spec_data)
+        self.build_external(spec_data["externals"][0])
+
+        if not force and self.project_path.is_dir() and any(self.project_path.iterdir()):
+            raise FileExistsError(
+                f"{self.project_path} already exists and is not empty"
+            )
+        try:
+            self.project_path.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise OSError(
+                f"Failed to create project directory {self.project_path}: {e}"
+            )
+
+    EXTERNAL_KEYS = frozenset({
+        "name", "namespace", "prefix", "alias", "help", "n_channels",
+        "params", "outlets", "message_methods", "type_methods", "meta",
+    })
 
     def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
         """Validate specification structure and required fields.
@@ -186,6 +216,13 @@ class Generator:
         ):
             raise ValueError("'externals' must be a non-empty list")
 
+        # Project path and filenames derive from the spec file stem: one external per file.
+        if len(spec_data["externals"]) > 1:
+            raise ValueError(
+                f"'externals' must contain exactly one external, got "
+                f"{len(spec_data['externals'])}; use one specification file per external"
+            )
+
         ext = spec_data["externals"][0]
         required_fields = ["name", "namespace"]
         for required_field in required_fields:
@@ -193,6 +230,17 @@ class Generator:
                 raise ValueError(
                     f"External must contain required field: '{required_field}'"
                 )
+
+        # build_external reads only these keys; reject others rather than drop them.
+        if "inlets" in ext:
+            raise ValueError(
+                "'inlets' is not supported; set 'inlet: true' on each param instead"
+            )
+        unknown = sorted(set(ext) - self.EXTERNAL_KEYS)
+        if unknown:
+            raise ValueError(
+                f"External contains unknown field(s): {', '.join(map(repr, unknown))}"
+            )
 
         # Validate optional fields have correct types
         if "params" in ext and not isinstance(ext["params"], list):
@@ -207,18 +255,68 @@ class Generator:
         if "type_methods" in ext and not isinstance(ext["type_methods"], list):
             raise ValueError("'type_methods' must be a list")
 
-        # Validate parameter structures
-        for param in ext.get("params", []):
-            if not isinstance(param, dict):
-                raise ValueError("Each parameter must be a dictionary")
-            param_required = ["name", "type"]
-            for required_field in param_required:
-                if required_field not in param:
-                    raise ValueError(
-                        f"Parameter must contain required field: '{required_field}'"
-                    )
+        # Validate component structures: (spec key, label, required fields)
+        components = [
+            ("params", "Parameter", ["name", "type"]),
+            ("outlets", "Outlet", ["name", "type"]),
+            ("message_methods", "Message method", ["name"]),
+            ("type_methods", "Type method", ["type"]),
+        ]
+        for key, label, component_required in components:
+            for item in ext.get(key, []):
+                if not isinstance(item, dict):
+                    raise ValueError(f"Each {label.lower()} must be a dictionary")
+                for required_field in component_required:
+                    if required_field not in item:
+                        raise ValueError(
+                            f"{label} must contain required field: '{required_field}'"
+                        )
+
+        # Every template renders these meta keys.
+        meta = ext.get("meta")
+        if not isinstance(meta, dict):
+            raise ValueError("External must contain a 'meta' dictionary")
+        for required_field in ["desc", "features", "author", "repo"]:
+            if required_field not in meta:
+                raise ValueError(f"'meta' must contain required field: '{required_field}'")
 
         return True
+
+    def build_external(self, ext_data: Dict[str, Any]) -> External:
+        """Build an External and its components from validated specification data.
+
+        Args:
+            ext_data: One entry of the specification's 'externals' list
+
+        Returns:
+            External whose params, outlets and methods have been type-checked
+
+        Raises:
+            ValueError: If a field or component type is invalid
+        """
+        try:
+            external = External(
+                name=ext_data["name"],
+                namespace=ext_data["namespace"],
+                prefix=ext_data.get("prefix", ""),
+                alias=ext_data.get("alias"),
+                help=ext_data.get("help"),
+                n_channels=ext_data.get("n_channels", 1),
+                is_dsp=self.is_dsp,
+                params_data=ext_data.get("params", []),
+                outlets_data=ext_data.get("outlets", []),
+                message_methods_data=ext_data.get("message_methods", []),
+                type_methods_data=ext_data.get("type_methods", []),
+                meta=ext_data.get("meta"),
+            )
+            # Components are built lazily; build them now so type errors surface here.
+            external.param_objects
+            external.outlet_objects
+            external.message_method_objects
+            external.type_method_objects
+        except Exception as e:
+            raise ValueError(f"Failed to create External object from specification data: {e}")
+        return external
 
     def render(self, template: str, outfile: Optional[str] = None) -> None:
         """Render a template file with specification data and write output.
@@ -250,27 +348,14 @@ class Generator:
         except Exception as e:
             raise ValueError(f"Template file not found or invalid: {template}: {e}")
 
-        try:
-            # Map specification data to External dataclass fields
-            external_data: Dict[str, Any] = {
-                "name": ext_data["name"],
-                "namespace": ext_data["namespace"],
-                "prefix": ext_data.get("prefix", ""),
-                "alias": ext_data.get("alias"),
-                "help": ext_data.get("help"),
-                "n_channels": ext_data.get("n_channels", 1),
-                "params_data": ext_data.get("params", []),
-                "outlets_data": ext_data.get("outlets", []),
-                "message_methods_data": ext_data.get("message_methods", []),
-                "type_methods_data": ext_data.get("type_methods", []),
-                "meta": ext_data.get("meta"),
-            }
-            self.model = external = External(**external_data)
-        except Exception as e:
-            raise ValueError(f"Failed to create External object from specification data: {e}")
+        self.model = external = self.build_external(ext_data)
+
+        # Output and Makefile names follow the spec's 'name', as the C setup function does.
+        self.name = external.name
+        self.fullname = external.name + ("~" if self.is_dsp else "")
 
         try:
-            rendered: str = str(templ.render(e=external))
+            rendered: str = str(templ.render(e=external, fullname=self.fullname))
         except Exception as e:
             raise ValueError(f"Template rendering failed: {e}")
 
@@ -298,34 +383,27 @@ class MaxProject(Generator):
         # Creates Max/MSP external in build/counter/
     """
 
-    def generate(self) -> None:
+    def generate(self, force: bool = False) -> None:
         """Generate Max/MSP external project with all required files.
 
         Creates the project directory and renders the appropriate templates
         for Max/MSP externals, including support for both regular and DSP externals.
 
+        Args:
+            force: Overwrite files in an existing, non-empty project directory
+
         Raises:
+            FileExistsError: If project directory is non-empty and force is False
             OSError: If project directory cannot be created
             ValueError: If template rendering fails
         """
-        try:
-            Path(OUTPUT_DIR).mkdir(exist_ok=True)
-            self.project_path.mkdir(exist_ok=True)
-        except OSError as e:
-            if self.project_path.exists():
-                print(
-                    f"Warning: {self.project_path} already exists, files may be overwritten"
-                )
-            else:
-                raise OSError(
-                    f"Failed to create project directory {self.project_path}: {e}"
-                )
+        self.make_project_dir(force)
 
         # Render appropriate external template based on type
         if self.is_dsp:
-            self.render("mx/dsp-external.cpp.mako")
+            self.render("mx/dsp-external.c.mako")
         else:
-            self.render("mx/external.cpp.mako")
+            self.render("mx/external.c.mako")
 
         # Generate documentation
         self.render("mx/README.md.mako", "README.md")
@@ -343,7 +421,7 @@ class PdProject(Generator):
         # Creates PureData external in build/counter/
     """
 
-    def generate(self) -> None:
+    def generate(self, force: bool = False) -> None:
         """Generate PureData external project with all required files.
 
         Creates the project directory and renders the appropriate templates
@@ -356,22 +434,15 @@ class PdProject(Generator):
         4. Generates project-specific Makefile
         5. Creates README documentation
 
+        Args:
+            force: Overwrite files in an existing, non-empty project directory
+
         Raises:
+            FileExistsError: If project directory is non-empty and force is False
             OSError: If project directory cannot be created
             ValueError: If template rendering fails
         """
-        try:
-            Path(OUTPUT_DIR).mkdir(exist_ok=True)
-            self.project_path.mkdir(exist_ok=True)
-        except OSError as e:
-            if self.project_path.exists():
-                print(
-                    f"Warning: {self.project_path} already exists, files may be overwritten"
-                )
-            else:
-                raise OSError(
-                    f"Failed to create project directory {self.project_path}: {e}"
-                )
+        self.make_project_dir(force)
 
         # Copy pdlibbuilder Makefile for compilation support
         src_makefile: Path = get_package_resource_path("resources/pd/Makefile.pdlibbuilder")

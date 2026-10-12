@@ -2,9 +2,10 @@
 
 lib.name = ${e.name}
 
-class.sources = ${e.name}.c
+class.sources = ${fullname}.c
 
-datafiles = ${e.name}-help.pd README.md
+# no help patch is generated; install one only if the user adds it
+datafiles = $(wildcard ${fullname}-help.pd) README.md
 
 suppress-wunused = true
 

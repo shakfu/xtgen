@@ -75,7 +75,6 @@ class ScalarType(AbstractType):
         type_args = {
             "bang": "",
             "float": "t_floatarg f",
-            "int": "t_floatarg f",
             "symbol": "t_symbol *s",
             "pointer": "t_gpointer *pt",
         }
@@ -127,7 +126,7 @@ class TypeMethod:
     type: str
     doc: str = ""
 
-    VALID_TYPES = ["bang", "float", "int", "symbol", "pointer", "list", "anything"]
+    VALID_TYPES = ["bang", "float", "symbol", "pointer", "list", "anything"]
 
     def __post_init__(self):
         if self.type not in self.VALID_TYPES:
@@ -148,7 +147,6 @@ class TypeMethod:
         type_args_map = {
             "bang": "",
             "float": ", t_floatarg f",
-            "int": ", t_floatarg f",
             "symbol": ", t_symbol *s",
             "pointer": ", t_gpointer *pt",
             "list": ", t_symbol *s, int argc, t_atom *argv",
@@ -166,7 +164,7 @@ class TypeMethod:
     def class_addmethod(self) -> str:
         """Generate class_add method call for this type."""
         return self.parent.code_generator.generate_class_addmethod(
-            self.parent.name, self.name, self.type
+            self.parent.c_name, self.name, self.type
         )
 
 
@@ -188,7 +186,7 @@ class MessageMethod:
     def class_addmethod(self) -> str:
         """Generate class_addmethod call for this message method."""
         return self.parent.code_generator.generate_message_addmethod(
-            self.parent.name, self.name, self.params
+            self.parent.c_name, self.name, self.params
         )
 
 
@@ -206,13 +204,11 @@ class Param:
     min: Optional[float] = None
     max: Optional[float] = None
 
+    # Limited to types with a Pd constructor arg (A_DEFFLOAT/A_DEFSYMBOL)
+    # and a passive inlet (floatinlet_new/symbolinlet_new).
     C_TYPES = {
-        "atom": "t_atom",
         "float": "t_float",
-        "symbol": "t_symbol",
-        "int": "t_int",
-        "signal": "t_signal",
-        "sample": "t_sample",
+        "symbol": "t_symbol *",
     }
 
     def __post_init__(self):
@@ -229,7 +225,21 @@ class Param:
     @property
     def struct_declaration(self) -> str:
         """Generate C struct field declaration."""
-        return f"{self.pd_type} {self.name}"
+        sep = "" if self.pd_type.endswith("*") else " "
+        return f"{self.pd_type}{sep}{self.name}"
+
+    @property
+    def c_initial(self) -> str:
+        """Generate C expression for the initial value."""
+        if self.type != "symbol":
+            return str(self.initial)
+        s = str(self.initial)
+        if any(ord(c) < 32 for c in s):
+            raise AudioTypeError(
+                f"Control character in initial value of symbol param '{self.name}'"
+            )
+        s = s.replace("\\", "\\\\").replace('"', '\\"')
+        return f'gensym("{s}")'
 
 
 @dataclass
@@ -259,6 +269,7 @@ class External:
     alias: Optional[str] = None
     help: Optional[str] = None
     n_channels: int = 1
+    is_dsp: bool = False
 
     # Components (as raw data, converted to objects via properties)
     params_data: List[Dict[str, Any]] = field(default_factory=list)
@@ -286,14 +297,19 @@ class External:
         self.code_generator = CodeGenerator(self.type_mapper, self.arg_builder)
 
     @property
+    def c_name(self) -> str:
+        """Get the C identifier prefix; DSP externals append '_tilde'."""
+        return f"{self.name}_tilde" if self.is_dsp else self.name
+
+    @property
     def type(self) -> str:
         """Get the C type name for this external."""
-        return f"t_{self.name}"
+        return f"t_{self.c_name}"
 
     @property
     def klass(self) -> str:
         """Get the C class name for this external."""
-        return f"{self.name}_class"
+        return f"{self.c_name}_class"
 
     # Backward compatibility properties
     @property
@@ -315,7 +331,9 @@ class External:
                 parent=self,
                 name=param_data["name"],
                 type=param_data["type"],
-                initial=param_data.get("initial", 0),
+                initial=param_data.get(
+                    "initial", "" if param_data["type"] == "symbol" else 0
+                ),
                 is_arg=param_data.get("arg", False),
                 has_inlet=param_data.get("inlet", False),
                 desc=param_data.get("desc", ""),
@@ -371,6 +389,11 @@ class External:
         return self.arg_builder.build_constructor_args(self.args)
 
     @property
+    def class_new_assignments(self) -> List[str]:
+        """Generate C statements assigning constructor arguments to fields."""
+        return self.arg_builder.build_constructor_assignments(self.args)
+
+    @property
     def class_type_signature(self) -> str:
         """Generate PureData class type signature."""
         return self.arg_builder.build_type_signature(self.args)
@@ -378,8 +401,10 @@ class External:
     @property
     def class_addcreator(self) -> str:
         """Generate class_addcreator call for alias."""
+        if self.alias == self.name:
+            return ""
         return self.code_generator.generate_creator_call(
-            self.name, self.alias, self.class_type_signature
+            self.c_name, self.alias, self.class_type_signature
         )
 
     # Backward compatibility properties for templates

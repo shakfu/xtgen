@@ -105,7 +105,7 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
         "-f",
         "--force",
         action="store_true",
-        help="Force overwrite existing project directory without warning",
+        help="Overwrite files in an existing, non-empty project directory",
     )
 
     # List examples
@@ -159,6 +159,7 @@ def validate_specification(spec_file: Path, verbose: bool = False) -> bool:
         generator = Generator(spec_file)
         spec_data = generator.load_specification()
         generator.validate_specification_structure(spec_data)
+        generator.build_external(spec_data["externals"][0])
 
         if verbose:
             print("✓ File format valid")
@@ -243,7 +244,7 @@ def main() -> int:
             print(f"Project directory: {project.project_path}")
 
         # Generate the project
-        project.generate()
+        project.generate(force=args.force)
 
         # Success message
         if not args.quiet:
@@ -260,10 +261,12 @@ def main() -> int:
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    except FileExistsError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print("Use --force to overwrite existing directories", file=sys.stderr)
+        return 1
     except OSError as e:
-        if not args.force:
-            print(f"Error: {e}", file=sys.stderr)
-            print("Use --force to overwrite existing directories", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
     except Exception as e:
         print(f"Unexpected error: {e}", file=sys.stderr)

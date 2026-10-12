@@ -80,13 +80,13 @@ void *${e.name}_new(${e.class_new_args})
 
     // initialize variables
     % for p in e.params:
-    x->${p.name} = ${p.initial};
+    x->${p.name} = ${p.c_initial};
     % endfor
 
-    // populate variables
-    % if len(e.args) > 0:
-    // switch stmt here
-    % endif
+    // populate variables from creation arguments
+    % for stmt in e.class_new_assignments:
+    ${stmt}
+    % endfor
 
     // create inlets
     // inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("list"), gensym("bound"));
@@ -132,7 +132,9 @@ void ${e.name}_setup(void)
     ${e.class_addcreator};
     % endif
 
+    % if e.help:
     // set name of default help file
     class_sethelpsymbol(${e.name}_class, gensym("${e.help}"));
+    % endif
 }
 

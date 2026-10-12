@@ -68,7 +68,7 @@ options:
   -o, --output DIR      Output directory for generated projects (default: build)
   -v, --verbose         Enable verbose output with detailed generation information
   -q, --quiet           Suppress all output except errors
-  -f, --force           Force overwrite existing project directory without warning
+  -f, --force           Overwrite files in an existing, non-empty project directory
   --list-examples       List available example specification files and exit
   --validate            Validate specification file without generating project
 

@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, List, Generator as TypingGenerator
 import os
+import json
 
 from xtgen.models import (
     ScalarType,
@@ -242,6 +243,60 @@ class TestMethodGeneration:
         assert "t_floatarg f0" in with_float.args
 
 
+class TestParamCodegen:
+    """Param types are limited to those the Pd templates can render."""
+
+    @pytest.mark.parametrize("ptype", ["int", "atom", "signal", "sample"])
+    def test_unsupported_param_type_rejected(self, ptype: str) -> None:
+        ext = External(
+            name="t",
+            namespace="t",
+            params_data=[{"name": "p", "type": ptype, "arg": True, "inlet": True}],
+        )
+        with pytest.raises(AudioTypeError):
+            ext.params
+
+    def test_int_type_method_rejected(self) -> None:
+        ext = External(name="t", namespace="t", type_methods_data=[{"type": "int"}])
+        with pytest.raises(AudioTypeError):
+            ext.type_methods
+
+    def test_symbol_param_renders(self, tmp_path: Path) -> None:
+        spec = {
+            "externals": [
+                {
+                    "namespace": "t",
+                    "name": "symobj",
+                    "params": [
+                        {"name": "label", "type": "symbol", "initial": 'a"b',
+                         "arg": True, "inlet": True},
+                        {"name": "tag", "type": "symbol", "arg": False, "inlet": False},
+                    ],
+                    "meta": {"desc": "", "author": "", "repo": "", "features": []},
+                }
+            ]
+        }
+        spec_path = tmp_path / "symobj.json"
+        spec_path.write_text(json.dumps(spec))
+        PdProject(spec_path, target_dir=str(tmp_path)).generate()
+        c = (tmp_path / "symobj" / "symobj.c").read_text()
+
+        assert "t_symbol *label;" in c
+        assert 'x->label = gensym("a\\"b");' in c
+        assert 'x->tag = gensym("");' in c
+        assert "symbolinlet_new(&x->x_obj, &x->label);" in c
+        assert "t_symbol *s0" in c and "A_DEFSYMBOL, 0" in c
+
+    def test_symbol_initial_control_char_rejected(self) -> None:
+        ext = External(
+            name="t",
+            namespace="t",
+            params_data=[{"name": "p", "type": "symbol", "initial": "a\nb"}],
+        )
+        with pytest.raises(AudioTypeError):
+            ext.params[0].c_initial
+
+
 class TestSpecificationProcessing:
     """Test YAML and JSON file processing and validation."""
 
@@ -467,6 +522,49 @@ externals:
         assert (project_dir / "README.md").exists()
         assert (project_dir / "Makefile.pdlibbuilder").exists()
 
+    @pytest.mark.parametrize(
+        "spec_name, source",
+        [("other.yml", "testobj.c"), ("testobj~.yml", "testobj~.c")],
+    )
+    def test_pd_source_named_after_external(
+        self, sample_yaml_file: Path, temp_dir: str, spec_name: str, source: str
+    ) -> None:
+        """C source and Makefile use the spec's 'name', not the spec filename."""
+        spec_path: Path = sample_yaml_file.rename(Path(temp_dir) / spec_name)
+        project: PdProject = PdProject(spec_path, target_dir=temp_dir)
+        project.generate()
+
+        project_dir: Path = Path(temp_dir) / spec_path.stem
+        assert sorted(p.name for p in project_dir.glob("*.c")) == [source]
+        makefile: str = (project_dir / "Makefile").read_text()
+        assert f"class.sources = {source}\n" in makefile
+
+    @pytest.mark.parametrize("spec_name", ["testobj.yml", "testobj~.yml"])
+    def test_pd_help_symbol_optional(
+        self, sample_yaml_file: Path, temp_dir: str, spec_name: str
+    ) -> None:
+        """Without 'help', Pd keeps its class-name default instead of 'None'."""
+        spec_path: Path = Path(temp_dir) / spec_name
+        spec_path.write_text(
+            sample_yaml_file.read_text().replace("    help: help-testobj\n", "")
+        )
+        PdProject(spec_path, target_dir=temp_dir).generate()
+
+        project_dir: Path = Path(temp_dir) / spec_path.stem
+        content: str = (project_dir / f"{spec_path.stem}.c").read_text()
+        assert "None" not in content
+        assert "class_sethelpsymbol" not in content
+        makefile: str = (project_dir / "Makefile").read_text()
+        assert f"datafiles = $(wildcard {spec_path.stem}-help.pd) README.md" in makefile
+
+    def test_pd_help_symbol_explicit(
+        self, sample_yaml_file: Path, temp_dir: str
+    ) -> None:
+        """An explicit 'help' is passed to class_sethelpsymbol."""
+        PdProject(sample_yaml_file, target_dir=temp_dir).generate()
+        content: str = (Path(temp_dir) / "testobj" / "testobj.c").read_text()
+        assert 'class_sethelpsymbol(testobj_class, gensym("help-testobj"));' in content
+
     def test_max_project_generation(
         self, sample_yaml_file: Path, temp_dir: str
     ) -> None:
@@ -479,6 +577,60 @@ externals:
         assert project_dir.exists()
         assert (project_dir / "testobj.c").exists()
         assert (project_dir / "README.md").exists()
+
+    @pytest.mark.parametrize("spec_name", ["counter.yml", "counter~.yml"])
+    def test_max_source_compiles_as_c(self, temp_dir: str, spec_name: str) -> None:
+        """Max sources are plain C that compiles against stub Max SDK headers."""
+        import subprocess
+
+        compiler = shutil.which("cc")
+        if compiler is None:
+            pytest.skip("no C compiler")
+        spec: Path = Path(temp_dir) / spec_name
+        shutil.copy(get_test_resource_path("resources/examples/counter.yml"), spec)
+        project: MaxProject = MaxProject(spec, target_dir=temp_dir)
+        project.generate()
+
+        source: Path = Path(temp_dir) / spec.stem / f"{spec.stem}.c"
+        content: str = source.read_text()
+        assert "daisysp" not in content
+        assert ("dsp64" in content) == spec.stem.endswith("~")
+        assert f'class_new("my.{spec.stem}"' in content
+
+        stubs: Path = Path(__file__).parent / "mx"
+        result = subprocess.run(
+            [compiler, "-std=c99", "-fsyntax-only", "-Werror=implicit-function-declaration",
+             "-I", str(stubs), str(source)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize("spec_name", ["counter.yml", "counter~.yml"])
+    def test_pd_source_compiles_as_c(self, temp_dir: str, spec_name: str) -> None:
+        """Pd sources compile against a stub m_pd.h with Pd's signatures."""
+        import subprocess
+
+        compiler = shutil.which("cc")
+        if compiler is None:
+            pytest.skip("no C compiler")
+        spec: Path = Path(temp_dir) / spec_name
+        shutil.copy(get_test_resource_path("resources/examples/counter.yml"), spec)
+        PdProject(spec, target_dir=temp_dir).generate()
+
+        source: Path = Path(temp_dir) / spec.stem / f"{spec.stem}.c"
+        if spec.stem.endswith("~"):
+            content: str = source.read_text()
+            # one signal inlet (sp[0]) and one signal outlet (sp[1])
+            assert "x->x_out = outlet_new(&x->x_obj, &s_signal);" in content
+            assert "sp[2]" not in content
+
+        stubs: Path = Path(__file__).parent / "pd"
+        result = subprocess.run(
+            [compiler, "-std=c99", "-fsyntax-only", "-Wall", "-Werror",
+             "-I", str(stubs), str(source)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
 
     def test_generated_c_file_content(
         self, sample_yaml_file: Path, temp_dir: str
@@ -496,6 +648,52 @@ externals:
         assert "t_float value" in content  # parameter
         assert "t_outlet *out_out" in content  # outlet
         assert "A test object" in content  # description from meta
+
+    @pytest.mark.parametrize(
+        "spec_name, source, ctor",
+        [
+            ("testobj.yml", "testobj.c", "testobj_new(t_floatarg f0)"),
+            ("testobj~.yml", "testobj~.c", "testobj_tilde_new(t_floatarg f0)"),
+        ],
+    )
+    def test_constructor_assigns_creation_args(
+        self, sample_yaml_file: Path, temp_dir: str, spec_name: str, source: str, ctor: str
+    ) -> None:
+        """Creation args overwrite 'initial' in both control and dsp templates."""
+        spec_path: Path = sample_yaml_file.rename(Path(temp_dir) / spec_name)
+        PdProject(spec_path, target_dir=temp_dir).generate()
+
+        content: str = (Path(temp_dir) / spec_path.stem / source).read_text()
+        body: str = content.split(ctor, 1)[1].split("return (void *)x;", 1)[0]
+        assert body.index("x->value = 0.5;") < body.index(
+            "if (f0 != 0) x->value = f0;"
+        )
+        assert "switch stmt here" not in content
+
+    def test_dsp_registers_tilde_identifiers(
+        self, sample_yaml_file: Path, temp_dir: str
+    ) -> None:
+        """DSP setup registers the '_tilde' functions the template defines."""
+        spec_path: Path = Path(temp_dir) / "testobj~.yml"
+        spec_path.write_text(
+            sample_yaml_file.read_text().replace("alias: testobj", "alias: tobj~")
+        )
+        PdProject(spec_path, target_dir=temp_dir).generate()
+
+        content: str = (Path(temp_dir) / "testobj~" / "testobj~.c").read_text()
+        assert "void testobj_tilde_bang(t_testobj_tilde *x)" in content
+        assert "void testobj_tilde_set(t_testobj_tilde *x, t_floatarg f0)" in content
+        assert "class_addbang(testobj_tilde_class, testobj_tilde_bang);" in content
+        assert (
+            "class_addmethod(testobj_tilde_class, (t_method)testobj_tilde_set, "
+            'gensym("set"), A_DEFFLOAT, 0);'
+        ) in content
+        assert (
+            'class_addcreator((t_newmethod)testobj_tilde_new, gensym("tobj~"), '
+            "A_DEFFLOAT, 0);"
+        ) in content
+        assert "(t_method)testobj_tilde_dsp" in content
+        assert "testobj_class" not in content
 
     def test_json_project_generation(self, temp_dir: str) -> None:
         """Test project generation using JSON specification file."""
@@ -600,6 +798,83 @@ class TestHelperClasses:
         # Test type signature
         assert builder.build_type_signature([]) == ", 0"
 
+    @staticmethod
+    def _arg_params(types: List[str]) -> List[Param]:
+        ext: External = External(name="t", namespace="t")
+        return [Param(ext, f"p{i}", t, 0, True, False) for i, t in enumerate(types)]
+
+    def test_constructor_assignments_typed(self) -> None:
+        """Typed args name-match the signature and skip Pd's omitted defaults."""
+        builder: ArgumentBuilder = ArgumentBuilder(TypeMapper())
+        params: List[Param] = self._arg_params(["float", "symbol"])
+
+        assert builder.build_constructor_args(params) == "t_floatarg f0, t_symbol *s1"
+        assert builder.build_constructor_assignments(params) == [
+            "if (f0 != 0) x->p0 = f0;",
+            "if (s1 != &s_) x->p1 = s1;",
+        ]
+
+    def test_constructor_assignments_gimme(self) -> None:
+        """More than 5 args read from argv, guarded by argc."""
+        builder: ArgumentBuilder = ArgumentBuilder(TypeMapper())
+        params: List[Param] = self._arg_params(["float"] * 7 + ["symbol"])
+
+        assert builder.build_constructor_args(params) == (
+            "t_symbol *s, int argc, t_atom *argv"
+        )
+        stmts: List[str] = builder.build_constructor_assignments(params)
+        assert len(stmts) == 8
+        assert stmts[0] == "if (argc > 0) x->p0 = atom_getfloatarg(0, argc, argv);"
+        assert stmts[6] == "if (argc > 6) x->p6 = atom_getfloatarg(6, argc, argv);"
+        assert stmts[7] == "if (argc > 7) x->p7 = atom_getsymbolarg(7, argc, argv);"
+
+    def test_typed_arg_limit_is_maxpdarg(self) -> None:
+        """Pd typechecks 5 args (MAXPDARG); 6 must fall back to A_GIMME."""
+        mapper: TypeMapper = TypeMapper()
+        builder: ArgumentBuilder = ArgumentBuilder(mapper)
+        generator: CodeGenerator = CodeGenerator(mapper, builder)
+
+        five: List[Param] = self._arg_params(["float"] * 5)
+        assert builder.build_type_signature(five) == ", ".join(["A_DEFFLOAT"] * 5) + ", 0"
+        assert generator.generate_message_addmethod("t", "m", ["float"] * 5).endswith(
+            ", ".join(["A_DEFFLOAT"] * 5) + ", 0)"
+        )
+
+        six: List[Param] = self._arg_params(["float"] * 6)
+        assert builder.build_constructor_args(six) == "t_symbol *s, int argc, t_atom *argv"
+        assert builder.build_type_signature(six) == "A_GIMME, 0"
+        assert (
+            builder.build_method_args("t_t", ["float"] * 6)
+            == "t_t *x, t_symbol *s, int argc, t_atom *argv"
+        )
+        assert generator.generate_message_addmethod("t", "m", ["float"] * 6).endswith(
+            'gensym("m"), A_GIMME, 0)'
+        )
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            ["float", "anything"],
+            ["list", "float"],
+            ["anything", "anything"],
+            ["anything"],
+            ["list"],
+        ],
+    )
+    def test_gimme_types_not_mixed(self, params: List[str]) -> None:
+        """'list'/'anything' params collapse to a lone A_GIMME; Pd rejects mixing."""
+        mapper: TypeMapper = TypeMapper()
+        builder: ArgumentBuilder = ArgumentBuilder(mapper)
+        generator: CodeGenerator = CodeGenerator(mapper, builder)
+
+        assert (
+            builder.build_method_args("t_test", params)
+            == "t_test *x, t_symbol *s, int argc, t_atom *argv"
+        )
+        assert generator.generate_message_addmethod("test", "m", params).endswith(
+            'gensym("m"), A_GIMME, 0)'
+        )
+
     def test_code_generator(self) -> None:
         """Test CodeGenerator functionality."""
         mapper: TypeMapper = TypeMapper()
@@ -663,6 +938,85 @@ class TestErrorHandling:
         finally:
             os.unlink(yaml_path)
 
+    @pytest.fixture
+    def two_externals_json(self, tmp_path: Path) -> Path:
+        path = tmp_path / "pair.json"
+        path.write_text(
+            '{"externals": ['
+            '{"namespace": "my", "name": "first"},'
+            '{"namespace": "my", "name": "second"}]}'
+        )
+        return path
+
+    def test_multiple_externals_rejected(self, two_externals_json: Path) -> None:
+        """Extra externals must raise, not be silently dropped."""
+        generator = Generator(two_externals_json)
+        with pytest.raises(ValueError, match="exactly one external"):
+            generator.validate_specification_structure(generator.load_specification())
+
+    @pytest.mark.parametrize(
+        "extra, error",
+        [
+            ('"inlets": [{"name": "bound", "type": "list"}]', "'inlet: true' on each param"),
+            ('"outlet": []', "unknown field\\(s\\): 'outlet'"),
+        ],
+    )
+    def test_unread_external_keys_rejected(
+        self, tmp_path: Path, extra: str, error: str
+    ) -> None:
+        """Keys render() never reads must raise, not be silently dropped."""
+        path = tmp_path / "ext.json"
+        path.write_text(
+            '{"externals": [{"namespace": "my", "name": "ext", ' + extra + ", "
+            '"meta": {"desc": "d", "features": [], "author": "a", "repo": "r"}}]}'
+        )
+        generator = Generator(path)
+        with pytest.raises(ValueError, match=error):
+            generator.validate_specification_structure(generator.load_specification())
+
+    def test_multiple_externals_cli(self, two_externals_json: Path, tmp_path: Path) -> None:
+        """Both --validate and generate must fail on a multi-external spec."""
+        import sys
+        from unittest.mock import patch
+
+        out_dir = tmp_path / "out"
+        for args in (["--validate"], ["-o", str(out_dir)]):
+            with patch.object(sys, "argv", ["xtgen", *args, str(two_externals_json)]):
+                assert main() == 1
+        assert not (out_dir / "pair" / "pair.c").exists()
+
+    META = '"meta": {"desc": "d", "features": [], "author": "a", "repo": "r"}'
+
+    @pytest.mark.parametrize(
+        "body, error",
+        [
+            ('"outlets": [{"name": "o", "type": "int"}], ' + META, "Invalid outlet type"),
+            ('"type_methods": [{"type": "foo"}], ' + META, "Invalid type method"),
+            ('"params": [{"name": "p", "type": "bad"}], ' + META, "Invalid parameter type"),
+            ('"outlets": [{"type": "float"}], ' + META, "Outlet must contain required field: 'name'"),
+            ('"message_methods": [{"params": []}], ' + META, "Message method must contain"),
+            ('"type_methods": [{"doc": "x"}], ' + META, "Type method must contain"),
+            ('"outlets": []', "'meta' dictionary"),
+            ('"meta": {"desc": "d"}', "'meta' must contain required field"),
+        ],
+    )
+    def test_validate_rejects_what_generation_rejects(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], body: str, error: str
+    ) -> None:
+        """--validate must fail on any spec that generation would reject."""
+        import sys
+        from unittest.mock import patch
+
+        spec = tmp_path / "bad.json"
+        spec.write_text('{"externals": [{"namespace": "my", "name": "bad", ' + body + "}]}")
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        for args in (["--validate"], ["-o", str(out_dir)]):
+            with patch.object(sys, "argv", ["xtgen", *args, str(spec)]):
+                assert main() == 1
+            assert error in capsys.readouterr().err
+        assert not (out_dir / "bad").exists()
+
 
 class TestCommandLineInterface:
     """Test command-line interface functionality."""
@@ -715,6 +1069,54 @@ class TestCommandLineInterface:
         project_dir = Path(temp_dir) / "counter"
         assert project_dir.exists()
         assert (project_dir / "counter.c").exists()
+
+    @pytest.mark.parametrize("target", ["pd", "max"])
+    def test_cli_regenerate_requires_force(self, temp_dir: str, target: str) -> None:
+        """Regenerating into a non-empty project dir fails unless --force is given."""
+        import sys
+        from unittest.mock import patch
+
+        spec = str(get_test_resource_path("resources/examples/counter.yml"))
+        args = ["xtgen", "-t", target, spec, "-o", temp_dir]
+        source = Path(temp_dir) / "counter" / "counter.c"
+
+        with patch.object(sys, "argv", args):
+            assert main() == 0
+        source.write_text("/* edited */\n")
+
+        with patch.object(sys, "argv", args):
+            assert main() == 1
+        assert source.read_text() == "/* edited */\n"
+
+        with patch.object(sys, "argv", args + ["--force"]):
+            assert main() == 0
+        assert source.read_text() != "/* edited */\n"
+
+    def test_cli_generates_into_empty_existing_dir(self, temp_dir: str) -> None:
+        """An existing but empty project dir does not need --force."""
+        import sys
+        from unittest.mock import patch
+
+        (Path(temp_dir) / "counter").mkdir()
+        spec = str(get_test_resource_path("resources/examples/counter.yml"))
+        with patch.object(sys, "argv", ["xtgen", spec, "-o", temp_dir]):
+            assert main() == 0
+        assert (Path(temp_dir) / "counter" / "counter.c").exists()
+
+    @pytest.mark.parametrize("target", ["pd", "max"])
+    def test_cli_creates_missing_output_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+    ) -> None:
+        """A nested, non-existent -o dir is created; ./build is not created in CWD."""
+        import sys
+        from unittest.mock import patch
+
+        monkeypatch.chdir(tmp_path)
+        spec = str(get_test_resource_path("resources/examples/counter.yml"))
+        with patch.object(sys, "argv", ["xtgen", "-t", target, spec, "-o", "out/sub"]):
+            assert main() == 0
+        assert (tmp_path / "out" / "sub" / "counter" / "counter.c").exists()
+        assert not (tmp_path / "build").exists()
 
     def test_cli_validation_mode(self) -> None:
         """Test CLI validation-only mode."""
