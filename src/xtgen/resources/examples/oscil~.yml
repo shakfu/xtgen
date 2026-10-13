@@ -1,0 +1,17 @@
+# Signal-rate example, portable to every target: float params with min/max, no Pd-only fields.
+# The '~' in the filename selects the DSP templates for pd and max; plugin targets drop it.
+externals:
+  - namespace: my
+    name: oscil
+    params:
+      - {name: freq, type: float, min: 0.1, max: 20000.0, initial: 440.0, inlet: true, desc: "frequency in Hz"}
+      - {name: amp,  type: float, min: 0.0, max: 1.0, initial: 0.5, desc: "output amplitude"}
+    n_channels: 1
+    meta:
+      desc: |
+        A sine oscillator.
+      features:
+        - frequency in Hz
+        - linear amplitude
+      author: xtgen
+      repo: https://github.com/xtgen/oscil.git

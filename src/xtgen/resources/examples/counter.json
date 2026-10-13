@@ -37,8 +37,6 @@
           "desc": ""
         }
       ],
-      "help": "help-counter",
-      "n_channels": 2,
       "meta": {
         "desc": "An external which counts via a variable step and optionally between two limits.",
         "features": [
@@ -71,12 +69,17 @@
         },
         {
           "name": "bound",
-          "params": ["float", "float"],
+          "params": [
+            "float",
+            "float"
+          ],
           "doc": "set (or reset) lower and uppwer boundary of counter"
         },
         {
           "name": "step",
-          "params": ["float"],
+          "params": [
+            "float"
+          ],
           "doc": "set the counter increment per step"
         }
       ],
@@ -92,10 +95,6 @@
         {
           "type": "symbol",
           "doc": "each symbol is printed out"
-        },
-        {
-          "type": "pointer",
-          "doc": "each pointer is printed out"
         },
         {
           "type": "list",

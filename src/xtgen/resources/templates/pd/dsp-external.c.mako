@@ -12,14 +12,19 @@ Repo: ${e.meta['repo']}
 
 */
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "m_pd.h"
+
+#define N_CHANNELS ${e.n_channels}
 
 /*
  * ${e.name} class object
  * ---------------------------------------------------------------------------
  */
 
-static t_class *${e.name}_tilde_class;
+static t_class *${e.c_name}_class;
 
 
 /*
@@ -27,10 +32,13 @@ static t_class *${e.name}_tilde_class;
  * ---------------------------------------------------------------------------
  */
 
-typedef struct _${e.name}_tilde {
+typedef struct _${e.c_name} {
     t_object x_obj;
     t_float x_f; // main signal in
-    t_outlet *x_out; // main signal out
+    int n; // frames per vector in buf
+    t_sample *buf; // input copies: Pd may give an outlet the same vector as any inlet
+    t_sample *ins[N_CHANNELS];
+    t_sample *outs[N_CHANNELS];
 
     /* parameters */
     % for p in e.params:
@@ -41,7 +49,7 @@ typedef struct _${e.name}_tilde {
     % for o in e.outlets:
     t_outlet *out_${o.name};
     % endfor
-} t_${e.name}_tilde;
+} ${e.type};
 
 
 /*
@@ -51,7 +59,7 @@ typedef struct _${e.name}_tilde {
 
 // typed-methods
 % for method in e.type_methods:
-void ${e.name}_tilde_${method.type}(${method.args})
+void ${e.c_name}_${method.type}(${method.args})
 {
     post("${method.type} body");
 }
@@ -60,7 +68,7 @@ void ${e.name}_tilde_${method.type}(${method.args})
 
 // message-methods
 % for method in e.message_methods:
-void ${e.name}_tilde_${method.name}(${method.args})
+void ${e.c_name}_${method.name}(${method.args})
 {
     % if method.doc:
     // ${method.doc}
@@ -76,25 +84,39 @@ void ${e.name}_tilde_${method.name}(${method.args})
  */
 
 
-t_int *${e.name}_tilde_perform(t_int *w)
+t_int *${e.c_name}_perform(t_int *w)
 {
-    // w[1] is the object (t_${e.name}_tilde *), unused by the placeholder body
-    t_sample *in  = (t_sample *)(w[2]);
-    t_sample *out = (t_sample *)(w[3]);
-    int n = (int)(w[4]);
+    ${e.type} *x = (${e.type} *)(w[1]);
+    int n = (int)(w[2]);
 
-    // placeholder: copy the main signal inlet to the signal outlet
-    while (n--) *out++ = *in++;
+    // placeholder: copy each signal inlet to its signal outlet, through buf
+    for (int c = 0; c < N_CHANNELS; c++)
+        memcpy(x->buf + (size_t)c * n, x->ins[c], sizeof(t_sample) * n);
+    for (int c = 0; c < N_CHANNELS; c++)
+        memcpy(x->outs[c], x->buf + (size_t)c * n, sizeof(t_sample) * n);
 
-    return (w + 5);
+    return (w + 3);
 }
 
 
-void ${e.name}_tilde_dsp(t_${e.name}_tilde *x, t_signal **sp)
+void ${e.c_name}_dsp(${e.type} *x, t_signal **sp)
 {
-    // sp[0]: main signal inlet, sp[1]: signal outlet
-    dsp_add(${e.name}_tilde_perform, 4, x,
-            sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
+    int n = sp[0]->s_n;
+    if (n != x->n) {
+        t_sample *buf = realloc(x->buf, sizeof(t_sample) * N_CHANNELS * (size_t)n);
+        if (!buf) {
+            pd_error(x, "${e.name}~: out of memory");
+            return;
+        }
+        x->buf = buf;
+        x->n = n;
+    }
+    // sp[0..N_CHANNELS-1]: signal inlets, then sp[N_CHANNELS..]: signal outlets
+    for (int c = 0; c < N_CHANNELS; c++) {
+        x->ins[c] = sp[c]->s_vec;
+        x->outs[c] = sp[N_CHANNELS + c]->s_vec;
+    }
+    dsp_add(${e.c_name}_perform, 2, x, (t_int)n);
 }
 
 
@@ -103,9 +125,9 @@ void ${e.name}_tilde_dsp(t_${e.name}_tilde *x, t_signal **sp)
  * ---------------------------------------------------------------------------
  */
 
-void *${e.name}_tilde_new(${e.class_new_args})
+void *${e.c_name}_new(${e.class_new_args})
 {
-    t_${e.name}_tilde *x = (t_${e.name}_tilde *)pd_new(${e.name}_tilde_class);
+    ${e.type} *x = (${e.type} *)pd_new(${e.c_name}_class);
 
     // initialize variables
     % for p in e.params:
@@ -117,14 +139,16 @@ void *${e.name}_tilde_new(${e.class_new_args})
     ${stmt}
     % endfor
 
-    // create inlets
-    // inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("list"), gensym("bound"));
+    // create inlets: signal inlets first, then param inlets
+    for (int c = 1; c < N_CHANNELS; c++)
+        inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     % for i in e.inlets:
     ${i.type}inlet_new(&x->x_obj, &x->${i.name});
     % endfor
 
-    // initialize outlets
-    x->x_out = outlet_new(&x->x_obj, &s_signal);
+    // initialize outlets: signal outlets first, then message outlets
+    for (int c = 0; c < N_CHANNELS; c++)
+        outlet_new(&x->x_obj, &s_signal);
     % for o in e.outlets:
     x->out_${o.name} = outlet_new(&x->x_obj, &s_${o.type});
     % endfor
@@ -133,7 +157,10 @@ void *${e.name}_tilde_new(${e.class_new_args})
 }
 
 
-
+void ${e.c_name}_free(${e.type} *x)
+{
+    free(x->buf);
+}
 
 
 /*
@@ -143,10 +170,10 @@ void *${e.name}_tilde_new(${e.class_new_args})
 
 void ${e.name}_tilde_setup(void) 
 {
-    ${e.name}_tilde_class = class_new(gensym("${e.name}~"),
-                            (t_newmethod)${e.name}_tilde_new,
-                            0, // destructor
-                            sizeof(t_${e.name}_tilde),
+    ${e.c_name}_class = class_new(gensym("${e.name}~"),
+                            (t_newmethod)${e.c_name}_new,
+                            (t_method)${e.c_name}_free,
+                            sizeof(${e.type}),
                             CLASS_DEFAULT,
                             ${e.class_type_signature});
 
@@ -161,10 +188,10 @@ void ${e.name}_tilde_setup(void)
     % endfor
 
     // set main signal in
-    CLASS_MAINSIGNALIN(${e.name}_tilde_class, t_${e.name}_tilde, x_f);
+    CLASS_MAINSIGNALIN(${e.c_name}_class, ${e.type}, x_f);
 
     /* Bind the DSP method, which is called when the DACs are turned on */
-    class_addmethod(${e.name}_tilde_class, (t_method)${e.name}_tilde_dsp, gensym("dsp"), 0);
+    class_addmethod(${e.c_name}_class, (t_method)${e.c_name}_dsp, gensym("dsp"), A_CANT, 0);
 
     % if e.alias:
     // set the alias to external
@@ -173,7 +200,7 @@ void ${e.name}_tilde_setup(void)
 
     % if e.help:
     // set name of default help file
-    class_sethelpsymbol(${e.name}_tilde_class, gensym("${e.help}"));
+    class_sethelpsymbol(${e.c_name}_class, gensym("${e.help}"));
     % endif
 }
 

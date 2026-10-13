@@ -1,7 +1,9 @@
 <%
 from xtgen.models import c_string
 desc = " ".join(str(e.meta['desc']).split())
-n = e.n_channels
+d = e.dsp
+n_in = d.n_inputs if d else e.n_channels
+n_out = d.n_outputs if d else e.n_channels
 %>\
 /* ${e.name}.c
 
@@ -14,6 +16,11 @@ Features:
 
 Author: ${e.meta['author']}
 Repo: ${e.meta['repo']}
+% if d:
+
+DSP: compiled by gen-dsp from ${d.source} into ${d.prefix}.c. Edit the graph and
+regenerate rather than editing ${d.prefix}.c.
+% endif
 
 */
 
@@ -22,19 +29,29 @@ Repo: ${e.meta['repo']}
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+% if d:
 
-#define N_CHANNELS ${n}
+#include "${d.prefix}.h"
+% endif
+
+#define N_IN_CHANNELS ${n_in}
+#define N_OUT_CHANNELS ${n_out}
 
 /*
  * ${e.name} descriptor
  * ---------------------------------------------------------------------------
  */
 
+/* clap-wrapper derives the AU type from the first feature. */
 static const char *${e.name}_features[] = {
+% if n_in:
     CLAP_PLUGIN_FEATURE_AUDIO_EFFECT,
-% if n == 1:
+% else:
+    CLAP_PLUGIN_FEATURE_INSTRUMENT, /* no audio input: a generator */
+% endif
+% if n_out == 1:
     CLAP_PLUGIN_FEATURE_MONO,
-% elif n == 2:
+% elif n_out == 2:
     CLAP_PLUGIN_FEATURE_STEREO,
 % endif
     NULL,
@@ -91,6 +108,9 @@ typedef struct {
     double sample_rate;
     /* Written on the audio thread (process/flush), read by get_value/save. */
     double params[PARAM_COUNT + 1];
+% if d:
+    ${d.state_type} *dsp; /* created by activate, used only on the audio thread */
+% endif
 } ${e.name}_t;
 
 static ${e.name}_t *${e.name}_from(const clap_plugin_t *plugin)
@@ -116,27 +136,22 @@ static void ${e.name}_handle_event(${e.name}_t *x, const clap_event_header_t *hd
 
 static uint32_t ${e.name}_audio_ports_count(const clap_plugin_t *plugin, bool is_input)
 {
-    (void)plugin; (void)is_input;
-    return 1;
+    (void)plugin;
+    return is_input ? N_IN_CHANNELS > 0 : 1;
 }
 
 static bool ${e.name}_audio_ports_get(const clap_plugin_t *plugin, uint32_t index,
                                 bool is_input, clap_audio_port_info_t *info)
 {
     (void)plugin;
-    if (index > 0)
+    if (index >= ${e.name}_audio_ports_count(plugin, is_input))
         return false;
+    uint32_t n_ch = is_input ? N_IN_CHANNELS : N_OUT_CHANNELS;
     info->id = 0;
     snprintf(info->name, sizeof(info->name), "%s", is_input ? "in" : "out");
     info->flags = CLAP_AUDIO_PORT_IS_MAIN;
-    info->channel_count = N_CHANNELS;
-% if n == 1:
-    info->port_type = CLAP_PORT_MONO;
-% elif n == 2:
-    info->port_type = CLAP_PORT_STEREO;
-% else:
-    info->port_type = NULL;
-% endif
+    info->channel_count = n_ch;
+    info->port_type = n_ch == 1 ? CLAP_PORT_MONO : n_ch == 2 ? CLAP_PORT_STEREO : NULL;
     info->in_place_pair = CLAP_INVALID_ID;
     return true;
 }
@@ -302,6 +317,38 @@ static bool ${e.name}_init(const clap_plugin_t *plugin)
     return true;
 }
 
+% if d:
+static void ${e.name}_deactivate(const clap_plugin_t *plugin)
+{
+    ${e.name}_t *x = ${e.name}_from(plugin);
+    if (x->dsp)
+        ${d.prefix}_destroy(x->dsp);
+    x->dsp = NULL;
+}
+
+static void ${e.name}_destroy(const clap_plugin_t *plugin)
+{
+    ${e.name}_deactivate(plugin);
+    free(${e.name}_from(plugin));
+}
+
+static bool ${e.name}_activate(const clap_plugin_t *plugin, double sample_rate,
+                         uint32_t min_frames, uint32_t max_frames)
+{
+    (void)min_frames; (void)max_frames;
+    ${e.name}_t *x = ${e.name}_from(plugin);
+    x->sample_rate = sample_rate;
+    x->dsp = ${d.prefix}_create((float)sample_rate);
+    return x->dsp != NULL;
+}
+
+/* Called on the audio thread before rendering, so the dsp state is only touched there. */
+static void ${e.name}_sync_params(${e.name}_t *x)
+{
+    for (uint32_t i = 0; i < n_params; i++)
+        ${d.prefix}_set_param(x->dsp, (int)i, (float)x->params[i]);
+}
+% else:
 static void ${e.name}_destroy(const clap_plugin_t *plugin)
 {
     free(${e.name}_from(plugin));
@@ -316,6 +363,7 @@ static bool ${e.name}_activate(const clap_plugin_t *plugin, double sample_rate,
 }
 
 static void ${e.name}_deactivate(const clap_plugin_t *plugin) { (void)plugin; }
+% endif
 
 static bool ${e.name}_start_processing(const clap_plugin_t *plugin)
 {
@@ -325,7 +373,16 @@ static bool ${e.name}_start_processing(const clap_plugin_t *plugin)
 
 static void ${e.name}_stop_processing(const clap_plugin_t *plugin) { (void)plugin; }
 
+% if d:
+static void ${e.name}_reset(const clap_plugin_t *plugin)
+{
+    ${e.name}_t *x = ${e.name}_from(plugin);
+    if (x->dsp)
+        ${d.prefix}_reset(x->dsp); /* also resets graph params; process re-syncs them */
+}
+% else:
 static void ${e.name}_reset(const clap_plugin_t *plugin) { (void)plugin; }
+% endif
 
 static clap_process_status ${e.name}_process(const clap_plugin_t *plugin,
                                        const clap_process_t *process)
@@ -336,12 +393,28 @@ static clap_process_status ${e.name}_process(const clap_plugin_t *plugin,
     uint32_t ev_index = 0;
     uint32_t next_ev_frame = n_events > 0 ? 0 : frames;
 
+% if d:
+    if (!x->dsp || process->audio_outputs_count < 1
+        || process->audio_outputs[0].channel_count < N_OUT_CHANNELS)
+        return CLAP_PROCESS_ERROR;
+    const clap_audio_buffer_t *out = &process->audio_outputs[0];
+    float *outs[N_OUT_CHANNELS];
+%   if n_in:
+    if (process->audio_inputs_count < 1
+        || process->audio_inputs[0].channel_count < N_IN_CHANNELS)
+        return CLAP_PROCESS_ERROR;
+    const clap_audio_buffer_t *in = &process->audio_inputs[0];
+    float *ins[N_IN_CHANNELS];
+%   endif
+    ${e.name}_sync_params(x);
+% else:
     if (process->audio_inputs_count < 1 || process->audio_outputs_count < 1)
         return CLAP_PROCESS_CONTINUE;
     const clap_audio_buffer_t *in = &process->audio_inputs[0];
     const clap_audio_buffer_t *out = &process->audio_outputs[0];
     uint32_t n_ch = in->channel_count < out->channel_count
         ? in->channel_count : out->channel_count;
+% endif
 
     /* Apply each event at its sample offset, then render up to the next one. */
     for (uint32_t i = 0; i < frames;) {
@@ -353,17 +426,33 @@ static clap_process_status ${e.name}_process(const clap_plugin_t *plugin,
                 break;
             }
             ${e.name}_handle_event(x, hdr);
+% if d:
+            ${e.name}_sync_params(x);
+% endif
             if (++ev_index == n_events) {
                 next_ev_frame = frames;
                 break;
             }
         }
 
+% if d:
+        if (next_ev_frame > i) {
+%   if n_in:
+            for (uint32_t ch = 0; ch < N_IN_CHANNELS; ch++)
+                ins[ch] = in->data32[ch] + i;
+%   endif
+            for (uint32_t ch = 0; ch < N_OUT_CHANNELS; ch++)
+                outs[ch] = out->data32[ch] + i;
+            ${d.prefix}_perform(x->dsp, ${"ins" if n_in else "NULL"}, outs, (int)(next_ev_frame - i));
+            i = next_ev_frame;
+        }
+% else:
         for (; i < next_ev_frame; i++) {
             /* TODO: DSP. Pass-through until implemented. */
             for (uint32_t ch = 0; ch < n_ch; ch++)
                 out->data32[ch][i] = in->data32[ch][i];
         }
+% endif
     }
     return CLAP_PROCESS_CONTINUE;
 }

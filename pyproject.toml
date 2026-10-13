@@ -21,6 +21,11 @@ dependencies = [
     "pyyaml>=6.0.2",
 ]
 
+[project.optional-dependencies]
+# Compiles a spec's 'dsp' graph (.gdsp) to C: needs compile_graph(lang="c") and
+# compile_graph_header(), both new in 0.6.0.
+dsp = ["gen-dsp[graph]>=0.6.0"]
+
 
 [project.scripts]
 xtgen = "xtgen.cli:main"
@@ -32,11 +37,17 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "gen-dsp[graph]>=0.6.0",
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "ruff>=0.13.1",
     "types-pyyaml>=6.0.12.20250915",
 ]
+
+
+[tool.uv.sources]
+# Until gen-dsp 0.6.0 is on PyPI; remove this table then.
+gen-dsp = { path = "../gen-dsp", editable = true }
 
 
 [build-system]

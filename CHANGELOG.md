@@ -2,7 +2,7 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases up to 0.1.2 are recorded only in git history.
 
-## [0.2.0] - 2026-10-13
+## [0.2.0]
 
 ### Added
 
@@ -17,10 +17,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release
 
 - `resources/examples/gain.yml`, a spec valid for both plugin targets.
 
+- Built-in examples can be named on the command line, e.g. `xtgen -t vcv lowpass~`. An existing path of the same name takes precedence. `--list-examples` shows the targets each example validates against. The targets are derived from the validators, not declared in the spec, so they cannot drift.
+
+- `oscil~` and `lowpass~` examples, valid for every target.
+
+- `dsp: <file>.gdsp` names a [gen-dsp](https://github.com/shakfu/gen-dsp) graph, signal processing written in gen-dsp's DSL. gen-dsp compiles it to C99, and the generated project calls it instead of copying input to output, for every target. The graph supplies the params and the audio input/output counts, and the spec may not repeat them, so the two cannot disagree. C was chosen over gen-dsp's default C++ because the Pd, Max and CLAP templates are C99; VCV includes it through gen-dsp's `extern "C"` header. gen-dsp 0.6.0 or later is an optional dependency (`xtgen[dsp]`); until 0.6.0 is on PyPI, `pyproject.toml` installs it from `../gen-dsp`. The built-in `reslp~` example uses it.
+
+  ```yaml
+  externals:
+    - {namespace: my, name: reslp, dsp: reslp.gdsp, meta: {...}}
+  ```
+
+- A graph with no audio inputs builds as a CLAP instrument with AU type `aumu`. `augn` (generator) was not used because clap-wrapper v0.16 builds it as a music device while labelling it a generator.
+
+- In Pd, a graph object may also have `outlets`, `message_methods` and `type_methods`.
+
 - `TARGETS` maps CLI target names to generator classes.
 
+- `python -m xtgen` runs the CLI.
+
 ### Changed
+
+- The bundled `resources/pd/m_pd.h` is updated from Pd 0.53 to 0.57.
+
+- `pd` and `max` use or reject every spec field, instead of ignoring some. A silently ignored field produced an object without behaviour the spec asked for.
+  - `pd` uses `prefix` for its C identifiers; the setup function keeps `name`, which Pd looks up.
+  - A `pd` signal object gets `n_channels` signal inlets and outlets.
+  - `max` registers `message_methods`, `type_methods` and `alias` (through `class_alias`).
+  - Rejected: `n_channels` on a `pd` or `max` control object; a `float` type method on a `pd` signal object with a signal inlet, where Pd replaces it with its own; and on `max`, `help` (the SDK cannot set a help file) and a `pointer` type method.
+
+  The built-in `counter` drops `n_channels`, `help` and its `pointer` method to stay valid for both; `gain` is now valid only for `clap` and `vcv`.
+
+- The README defines its terms and documents every spec field.
 
 - `--validate` applies the rules of the target given by `-t`. Before, it always applied the Pd rules.
 
 - Plugin targets reject `prefix`, `alias`, `help`, `outlets`, `message_methods`, `type_methods` and `arg: true`. They do not ignore them. A silently ignored field would generate a plugin missing behaviour the spec asked for. Params must be float, with finite `min < max` and `min <= initial <= max`.
+
+### Fixed
+
+- Generated READMEs had `\##` or `\\##` headings. The templates escaped Mako's `##` comment marker with a backslash, which Mako does not recognise, so the backslashes were printed. They now write `${'##'}`.
+
+- A Pd spec with no `arg: true` param generated `class_new(..., CLASS_DEFAULT, , 0)` and `class_addcreator(..., , 0)`, which do not compile. The empty type signature was `", 0"`, and the templates already supply the leading comma.

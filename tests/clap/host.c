@@ -1,11 +1,17 @@
 /* Minimal CLAP host for tests: links a generated plugin and exercises it.
  *
- * Usage: host <plugin-id>. Prints "ok" and exits 0 on success.
+ * Usage: host <plugin-id> [pass | finite | gain G0 G1]. Prints "ok" and exits 0
+ * on success. The mode sets the expected audio, with param 0 set to its max at
+ * FRAMES / 2: pass (default) copies input to output; finite only requires
+ * finite output (generators have no input port); gain expects input * G0 before
+ * the event and input * G1 from it on.
  */
 
 #include <clap/clap.h>
 
+#include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define CHECK(cond)                                                  \
@@ -97,7 +103,9 @@ static const clap_host_t g_host = {
 
 int main(int argc, char **argv)
 {
-    CHECK(argc == 2);
+    CHECK(argc == 2 || argc == 3 || argc == 5);
+    const char *mode = argc > 2 ? argv[2] : "pass";
+    CHECK(!strcmp(mode, "pass") || !strcmp(mode, "finite") || (!strcmp(mode, "gain") && argc == 5));
     CHECK(clap_entry.init("."));
     const clap_plugin_factory_t *factory = clap_entry.get_factory(CLAP_PLUGIN_FACTORY_ID);
     CHECK(factory && factory->get_plugin_count(factory) == 1);
@@ -126,9 +134,17 @@ int main(int argc, char **argv)
     CHECK(!params->get_info(plugin, n_params, &info0) || n_params == 0);
 
     clap_audio_port_info_t port;
-    CHECK(ports->count(plugin, true) == 1 && ports->get(plugin, 0, true, &port));
+    uint32_t n_in_ports = ports->count(plugin, true);
+    CHECK(n_in_ports <= 1 && ports->count(plugin, false) == 1);
+    CHECK(!ports->get(plugin, n_in_ports, true, &port));
+    CHECK(ports->get(plugin, 0, false, &port));
     uint32_t n_ch = port.channel_count;
     CHECK(n_ch >= 1 && n_ch <= MAX_CH);
+    if (n_in_ports) {
+        CHECK(ports->get(plugin, 0, true, &port));
+        CHECK(port.channel_count == n_ch);
+    }
+    CHECK(n_in_ports == 1 || !strcmp(mode, "finite"));
 
     /* Process: pass-through audio; a param event mid-block is applied. */
     static float in_data[MAX_CH][FRAMES], out_data[MAX_CH][FRAMES];
@@ -142,7 +158,7 @@ int main(int argc, char **argv)
     clap_audio_buffer_t in_buf = {in_ptrs, NULL, n_ch, 0, 0};
     clap_audio_buffer_t out_buf = {out_ptrs, NULL, n_ch, 0, 0};
     clap_process_t proc = {
-        -1, FRAMES, NULL, &in_buf, &out_buf, 1, 1, &g_in_events, &g_out_events,
+        -1, FRAMES, NULL, &in_buf, &out_buf, n_in_ports, 1, &g_in_events, &g_out_events,
     };
     if (n_params > 0)
         set_event(FRAMES / 2, info0.id, info0.max_value);
@@ -152,8 +168,17 @@ int main(int argc, char **argv)
     CHECK(plugin->process(plugin, &proc) == CLAP_PROCESS_CONTINUE);
     plugin->stop_processing(plugin);
     plugin->deactivate(plugin);
-    for (uint32_t c = 0; c < n_ch; c++)
-        CHECK(!memcmp(in_data[c], out_data[c], sizeof(in_data[c])));
+    for (uint32_t c = 0; c < n_ch; c++) {
+        if (!strcmp(mode, "pass"))
+            CHECK(!memcmp(in_data[c], out_data[c], sizeof(in_data[c])));
+        for (uint32_t i = 0; i < FRAMES; i++) {
+            CHECK(isfinite(out_data[c][i]));
+            if (!strcmp(mode, "gain")) {
+                float g = (float)atof(argv[i < FRAMES / 2 || n_params == 0 ? 3 : 4]);
+                CHECK(fabsf(out_data[c][i] - in_data[c][i] * g) <= 1e-6f * fabsf(in_data[c][i] * g));
+            }
+        }
+    }
 
     if (n_params > 0) {
         double v;

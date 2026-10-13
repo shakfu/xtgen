@@ -17,13 +17,13 @@ typedef t_class *t_pd;
 typedef struct _text { t_pd ob_pd; } t_object;
 typedef struct _inlet t_inlet;
 typedef struct _outlet t_outlet;
-typedef struct _signal { int s_n; t_sample *s_vec; } t_signal;
+typedef struct _signal { int s_n; t_sample *s_vec; t_float s_sr; } t_signal;
 typedef void (*t_method)(void);
 typedef void *(*t_newmethod)(void);
 typedef t_int *(*t_perfroutine)(t_int *w);
 
 typedef enum { A_NULL, A_FLOAT, A_SYMBOL, A_POINTER, A_GIMME = 10, A_DEFFLOAT = 6,
-               A_DEFSYMBOL = 7 } t_atomtype;
+               A_DEFSYMBOL = 7, A_CANT = 11 } t_atomtype;
 #define CLASS_DEFAULT 0
 
 extern t_symbol s_bang, s_float, s_symbol, s_list, s_anything, s_signal;
@@ -52,11 +52,13 @@ void class_domainsignalin(t_class *c, int onset);
 t_pd *pd_new(t_class *cls);
 t_symbol *gensym(const char *s);
 t_outlet *outlet_new(t_object *owner, t_symbol *s);
+t_inlet *inlet_new(t_object *owner, t_pd *dest, t_symbol *s1, t_symbol *s2);
 t_inlet *floatinlet_new(t_object *owner, t_float *fp);
 t_inlet *symbolinlet_new(t_object *owner, t_symbol **sp);
 t_float atom_getfloatarg(int which, int argc, const t_atom *argv);
 t_symbol *atom_getsymbolarg(int which, int argc, const t_atom *argv);
 void dsp_add(t_perfroutine f, int n, ...);
 void post(const char *fmt, ...);
+void pd_error(const void *object, const char *fmt, ...);
 
 #endif

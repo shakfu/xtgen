@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Generator as TypingGenerator
 import os
 import json
+import re
 
 from xtgen.models import (
     ScalarType,
@@ -46,6 +47,9 @@ from xtgen.cli import (
     create_argument_parser,
     validate_specification,
     list_examples,
+    find_example,
+    example_targets,
+    EXAMPLES_DIR,
 )
 # Also import from core for backward compatibility
 from xtgen import (
@@ -158,8 +162,9 @@ class TestExternalModel:
         """Test External object creation from data."""
         external: External = External(**sample_external_data)
         assert external.name == "counter"
-        assert external.type == "t_counter"
-        assert external.klass == "counter_class"
+        # 'prefix' names the C identifiers
+        assert external.type == "t_ctr"
+        assert external.klass == "ctr_class"
 
     def test_external_params(self, sample_external_data: Dict[str, Any]) -> None:
         """Test External params property."""
@@ -478,10 +483,8 @@ class TestProjectGeneration:
 externals:
   - namespace: test
     name: testobj
-    prefix: tst
     alias: testobj
     help: help-testobj
-    n_channels: 1
     params:
       - name: value
         type: float
@@ -572,6 +575,10 @@ externals:
         self, sample_yaml_file: Path, temp_dir: str
     ) -> None:
         """Test Max/MSP project generation."""
+        # Max has no help-file call, so it rejects 'help'.
+        sample_yaml_file.write_text(
+            sample_yaml_file.read_text().replace("    help: help-testobj\n", "")
+        )
         project: MaxProject = MaxProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
 
@@ -617,15 +624,19 @@ externals:
         if compiler is None:
             pytest.skip("no C compiler")
         spec: Path = Path(temp_dir) / spec_name
-        shutil.copy(get_test_resource_path("resources/examples/counter.yml"), spec)
+        text = get_test_resource_path("resources/examples/counter.yml").read_text()
+        if spec_name.endswith("~.yml"):
+            # A signal object rejects a float method; its signal inlet takes floats.
+            text = text.replace("      - type: float\n        doc: each number is printed out\n\n", "")
+            assert "- type: float" not in text
+        spec.write_text(text)
         PdProject(spec, target_dir=temp_dir).generate()
 
         source: Path = Path(temp_dir) / spec.stem / f"{spec.stem}.c"
         if spec.stem.endswith("~"):
             content: str = source.read_text()
-            # one signal inlet (sp[0]) and one signal outlet (sp[1])
-            assert "x->x_out = outlet_new(&x->x_obj, &s_signal);" in content
-            assert "sp[2]" not in content
+            # without n_channels: one signal inlet and one signal outlet
+            assert "#define N_CHANNELS 1\n" in content
 
         stubs: Path = Path(__file__).parent / "pd"
         result = subprocess.run(
@@ -705,10 +716,8 @@ externals:
     {
       "namespace": "test",
       "name": "jsonobj",
-      "prefix": "json",
       "alias": "jsonobj",
       "help": "help-jsonobj",
-      "n_channels": 1,
       "params": [
         {
           "name": "value",
@@ -799,7 +808,7 @@ class TestHelperClasses:
         assert builder.build_constructor_args([]) == "void"
 
         # Test type signature
-        assert builder.build_type_signature([]) == ", 0"
+        assert builder.build_type_signature([]) == "0"
 
     @staticmethod
     def _arg_params(types: List[str]) -> List[Param]:
@@ -915,7 +924,7 @@ class TestHelperClasses:
 
         # Test that they work
         assert external.class_new_args == "void"
-        assert external.class_type_signature == ", 0"
+        assert external.class_type_signature == "0"
 
 
 class TestErrorHandling:
@@ -1165,6 +1174,16 @@ class TestCommandLineInterface:
             result = main()
             assert result == 1
 
+    @pytest.mark.parametrize("args, code", [(["--list-examples"], 0), (["nosuch"], 1)])
+    def test_python_m_xtgen(self, args: List[str], code: int) -> None:
+        """'python -m xtgen' runs the CLI and returns its exit status."""
+        import subprocess
+        import sys
+
+        result = subprocess.run([sys.executable, "-m", "xtgen", *args],
+                                capture_output=True, text=True)
+        assert result.returncode == code, result.stderr
+
     def test_list_examples_function(self) -> None:
         """Test the list_examples function."""
         # This function prints to stdout, so we'll just ensure it doesn't crash
@@ -1256,6 +1275,77 @@ def run(args: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str
 
     result = subprocess.run(args, capture_output=True, text=True, cwd=cwd, env=env)
     assert result.returncode == 0, result.stderr + result.stdout
+
+
+TESTS_DIR = Path(__file__).parent
+
+
+def check_c_syntax(source: Path, target: str) -> None:
+    """Syntax-check a generated pd or max source against the stub SDK headers."""
+    cc = shutil.which("cc")
+    if cc is None:
+        pytest.skip("no C compiler")
+    flags = {"pd": ["-Wall", "-Werror"], "max": ["-Werror=implicit-function-declaration"]}[target]
+    stubs = TESTS_DIR / {"pd": "pd", "max": "mx"}[target]
+    run([cc, "-std=c99", "-fsyntax-only", *flags, "-I", str(stubs), "-I", str(source.parent),
+         str(source)])
+
+
+def build_and_run_clap(src: Path, name: str, plugin_id: str, *mode: str) -> None:
+    """Compile a generated CLAP project warning-free, link tests/clap/host.c, run it."""
+    cc, cxx = shutil.which("cc"), shutil.which("c++")
+    if cc is None or cxx is None:
+        pytest.skip("no C/C++ compiler")
+    inc = ["-I", str(TESTS_DIR / "clap" / "include"), "-I", str(src)]
+    warn = ["-Wall", "-Wextra", "-Werror"]
+    objs = [src / "host.o", src / "plugin.o", src / "entry.o"]
+    run([cc, "-std=c11", "-Wpedantic", *warn, *inc, "-c", str(src / f"{name}.c"), "-o", str(objs[1])])
+    run([cxx, "-std=c++17", *warn, *inc, "-c", str(src / f"{name}_entry.cpp"), "-o", str(objs[2])])
+    run([cc, "-std=c11", *warn, *inc, "-c", str(TESTS_DIR / "clap" / "host.c"), "-o", str(objs[0])])
+    dsp_c = src / f"{name}_dsp.c"
+    if dsp_c.is_file():
+        objs.append(src / "dsp.o")
+        run([cc, "-std=c99", *warn, "-c", str(dsp_c), "-o", str(objs[-1])])
+    run([cxx, "-o", str(src / "host"), *map(str, objs)])
+    run([str(src / "host"), plugin_id, *mode])
+
+
+def build_and_run_max(src: Path, name: str, *args: str) -> None:
+    """Link a generated Max graph external with tests/mx/fake_max.c and run graph_host."""
+    cc = shutil.which("cc")
+    if cc is None:
+        pytest.skip("no C compiler")
+    mx = TESTS_DIR / "mx"
+    inc = ["-I", str(mx), "-I", str(src)]
+    objs = []
+    for source in (mx / "fake_max.c", mx / "graph_host.c", src / f"{name}~.c", src / f"{name}_dsp.c"):
+        objs.append(src / (source.stem + ".o"))
+        # gen-dsp's C is held to -Werror; the Max-API casts in the rest are not -Wextra clean.
+        flags = ["-Wall", "-Wextra", "-Werror"] if source.stem.endswith("_dsp") else []
+        run([cc, "-std=c99", *flags, *inc, "-c", str(source), "-o", str(objs[-1])])
+    run([cc, "-o", str(src / "host"), *map(str, objs), "-lm"])
+    run([str(src / "host"), *args])
+
+
+def build_vcv(project: Path) -> None:
+    """Build a VCV plugin against $RACK_DIR with -Werror."""
+    # plugin.mk appends to FLAGS, so an environment value is kept.
+    env = dict(os.environ, FLAGS="-Werror")
+    run(["make", f"RACK_DIR={os.environ['RACK_DIR']}"], cwd=project, env=env)
+
+
+def run_in_rack(project: Path, module: str, *args: str) -> None:
+    """Link a built VCV plugin's objects with tests/vcv/rack_host.cpp and libRack; run it."""
+    rack = os.environ["RACK_DIR"]
+    objs = [str(o) for o in (project / "build" / "src").glob("*.o")]
+    run(["c++", "-std=c++11", f"-I{rack}/include", f"-I{rack}/dep/include",
+         f"-DMODEL=model{module}", "-c", str(TESTS_DIR / "vcv" / "rack_host.cpp"),
+         "-o", str(project / "rack_host.o")])
+    run(["c++", "-o", str(project / "rack_host"), str(project / "rack_host.o"), *objs,
+         f"-L{rack}", "-lRack"])
+    # libRack.dylib's install name is bare, so the loader needs its directory.
+    env = dict(os.environ, DYLD_LIBRARY_PATH=rack, LD_LIBRARY_PATH=rack)
+    run([str(project / "rack_host"), *args], env=env)
 
 
 class TestPluginTargets:
@@ -1408,9 +1498,505 @@ class TestPluginTargets:
             spec = tmp_path / "gain.yml"
             shutil.copy(self.GAIN, spec)
         VcvProject(spec, target_dir=str(tmp_path)).generate()
-        # plugin.mk appends to FLAGS, so an environment value is kept.
-        env = dict(os.environ, FLAGS="-Werror")
-        run(["make", f"RACK_DIR={os.environ['RACK_DIR']}"], cwd=tmp_path / "gain", env=env)
+        build_vcv(tmp_path / "gain")
+
+
+class TestBuiltinExamples:
+    """Built-in example specs, addressed by name and built for each target they support."""
+
+    ALL = ["pd", "max", "clap", "vcv"]
+    MATRIX = {
+        "counter.json": ["pd", "max"],
+        "counter.yml": ["pd", "max"],
+        "gain.yml": ["clap", "vcv"],  # n_channels without '~': plugins only
+        "lowpass~.yml": ALL,
+        "oscil~.yml": ALL,
+        "reslp~.yml": ALL,
+    }
+    STUBS = Path(__file__).parent
+
+    def test_target_matrix(self) -> None:
+        """A new or changed example must update MATRIX, so portability cannot regress silently."""
+        found = {p.name: example_targets(p) for p in EXAMPLES_DIR.iterdir()
+                 if p.suffix in (".yml", ".json")}
+        assert found == self.MATRIX
+
+    def test_list_examples_shows_targets(self, capsys: pytest.CaptureFixture[str]) -> None:
+        list_examples()
+        lines = capsys.readouterr().out.splitlines()
+        for name, targets in self.MATRIX.items():
+            assert any(line.split() == [name, *(t + "," for t in targets[:-1]), targets[-1]]
+                       for line in lines), name
+
+    @pytest.mark.parametrize(
+        "name, expected",
+        [("counter", "counter.yml"), ("counter.json", "counter.json"),
+         ("lowpass~", "lowpass~.yml"), ("nosuch", None)],
+    )
+    def test_find_example(self, name: str, expected: Optional[str]) -> None:
+        found = find_example(name)
+        assert (found.name if found else None) == expected
+
+    def test_local_path_wins(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import sys
+        from unittest.mock import patch
+
+        spec = {"externals": [{"name": "local", "namespace": "my",
+                               "meta": {"desc": "", "features": [], "author": "", "repo": ""}}]}
+        (tmp_path / "gain.json").write_text(json.dumps(spec))
+        monkeypatch.chdir(tmp_path)
+        with patch.object(sys, "argv", ["xtgen", "-q", "-o", "out", "gain.json"]):
+            assert main() == 0
+        assert (tmp_path / "out" / "gain" / "local.c").is_file()
+
+    def test_unknown_name_fails(self, capsys: pytest.CaptureFixture[str]) -> None:
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["xtgen", "nosuch"]):
+            assert main() == 1
+        assert "built-in example not found: nosuch" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "example, target",
+        [(e, t) for e, ts in MATRIX.items() for t in ts if e != "counter.json"],
+    )
+    def test_readme_headings(self, tmp_path: Path, example: str, target: str) -> None:
+        """Markdown headings render as '## ', not as escaped '\\##'."""
+        if example == "reslp~.yml":
+            pytest.importorskip("gen_dsp.graph")
+        project = TARGETS[target](EXAMPLES_DIR / example, target_dir=str(tmp_path))
+        project.generate()
+        text = (project.project_path / "README.md").read_text()
+        headings = [line for line in text.splitlines() if "##" in line]
+        assert headings and all(h.startswith("## ") for h in headings), headings
+        assert "## Parameters" in text
+        assert ("## DSP" in text) == (example == "reslp~.yml")
+
+    @pytest.mark.parametrize(
+        "example, target",
+        [(e, t) for e, ts in MATRIX.items() for t in ts],
+    )
+    def test_example_builds(self, tmp_path: Path, example: str, target: str) -> None:
+        """Generated by bare name; C sources compile, and CLAP passes tests/clap/host.c."""
+        import sys
+        from unittest.mock import patch
+
+        with patch.object(sys, "argv", ["xtgen", "-q", "-t", target, "-o", str(tmp_path), example]):
+            assert main() == 0
+        stem = Path(example).stem
+        dsp = stem.endswith("~")
+        name = stem.strip("~")
+
+        if target in ("pd", "max"):
+            source = tmp_path / stem / f"{name}{'~' if dsp else ''}.c"
+            assert source.is_file()
+            check_c_syntax(source, target)
+        elif target == "clap":
+            # Graph DSP is not pass-through, so only require finite output.
+            graph = (tmp_path / name / f"{name}_dsp.c").is_file()
+            build_and_run_clap(tmp_path / name, name, f"my.{name}", *(["finite"] if graph else []))
+        else:
+            module = name[0].upper() + name[1:]
+            for f in ("plugin.json", "Makefile", f"src/{module}.cpp", f"res/{module}.svg"):
+                assert (tmp_path / name / f).is_file(), f
+
+def find_pd() -> Optional[str]:
+    """Return a Pd binary: $PD, pd on PATH, or a macOS app bundle."""
+    import glob
+
+    if os.environ.get("PD"):
+        return os.environ["PD"]
+    found = shutil.which("pd")
+    if found:
+        return found
+    apps = sorted(glob.glob("/Applications/Pd*.app") + glob.glob("/Applications/*/Pd*.app"))
+    return apps[-1] + "/Contents/Resources/bin/pd" if apps else None
+
+
+# Two-channel patch: feed 1 and 3, snapshot both outlets, send MESSAGE, snapshot again, quit.
+_TWO_CHANNEL_PATCH = r"""#N canvas 0 0 600 400 12;
+#X obj 10 10 loadbang;
+#X obj 10 40 t b b;
+#X msg 120 40 \; pd dsp 1;
+#X obj 10 70 delay 5;
+#X obj 200 70 sig~ 1;
+#X obj 280 70 sig~ 3;
+#X obj 200 130 OBJECT;
+#X obj 200 170 snapshot~;
+#X obj 300 170 snapshot~;
+#X obj 200 200 print L;
+#X obj 300 200 print R;
+#X msg 120 100 MESSAGE;
+#X obj 10 130 delay 5;
+#X msg 10 230 \; pd quit;
+#X obj 10 100 t b b b;
+#X obj 10 160 t b b;
+#X connect 0 0 1 0;
+#X connect 1 1 2 0;
+#X connect 1 0 3 0;
+#X connect 3 0 14 0;
+#X connect 14 2 7 0;
+#X connect 14 2 8 0;
+#X connect 14 1 11 0;
+#X connect 14 0 12 0;
+#X connect 12 0 15 0;
+#X connect 15 1 7 0;
+#X connect 15 1 8 0;
+#X connect 15 0 13 0;
+#X connect 4 0 6 0;
+#X connect 5 0 6 1;
+#X connect 6 0 7 0;
+#X connect 6 1 8 0;
+#X connect 11 0 6 0;
+#X connect 7 0 9 0;
+#X connect 8 0 10 0;
+"""
+
+
+def two_channel_patch(obj: str, message: Optional[str] = None) -> str:
+    """Pd patch printing obj~'s two signal outlets, before and after an optional message."""
+    patch = _TWO_CHANNEL_PATCH.replace("OBJECT", obj).replace("MESSAGE", message or "bang")
+    return patch if message else patch.replace("#X connect 11 0 6 0;\n", "")
+
+
+SCALE_TEST_PATCH = two_channel_patch("scale~", "gain 2")
+
+
+class TestDspGraph:
+    """Specs whose 'dsp' field names a gen-dsp graph (needs gen-dsp with lang='c')."""
+
+    DSP_DIR = Path(__file__).parent / "dsp"
+    SCALE = DSP_DIR / "scale~.yml"  # stereo gain, param gain 0..2 = 0.5
+    SINE = DSP_DIR / "sine~.yml"  # generator: no audio inputs
+    HYBRID = {
+        "outlets": [{"name": "f", "type": "float"}, {"name": "b", "type": "bang"}],
+        "type_methods": [{"type": "bang"}, {"type": "list"}],
+        "message_methods": [{"name": "reset", "params": []},
+                            {"name": "set", "params": ["float", "float"]}],
+    }
+
+    @pytest.fixture(autouse=True)
+    def _needs_gen_dsp(self) -> None:
+        pytest.importorskip("gen_dsp.graph")
+
+    def write_spec(self, path: Path, **ext: Any) -> Path:
+        shutil.copy(self.DSP_DIR / "scale.gdsp", path.parent / "scale.gdsp")
+        base = {"namespace": "test", "name": "scale", "dsp": "scale.gdsp",
+                "meta": {"desc": "", "features": [], "author": "", "repo": ""}}
+        path.write_text(json.dumps({"externals": [{**base, **ext}]}))
+        return path
+
+    def test_graph_supplies_params(self) -> None:
+        spec = PdProject(self.SCALE).validate()
+        assert spec["externals"][0]["params"] == [
+            {"name": "gain", "type": "float", "min": 0.0, "max": 2.0, "initial": 0.5}
+        ]
+
+    @pytest.mark.parametrize(
+        "target, src, build_file, build_ref",
+        [
+            ("pd", "scale~", "scale~/Makefile", "scale_dsp.c"),
+            ("max", "scale~", "scale~/README.md", "scale_dsp.c"),  # no build file: README says
+            ("clap", "scale", "scale/CMakeLists.txt", "scale_dsp.c"),
+            ("vcv", "scale/src", "scale/Makefile", "src/*.c"),
+        ],
+    )
+    def test_writes_graph_sources(
+        self, tmp_path: Path, target: str, src: str, build_file: str, build_ref: str
+    ) -> None:
+        TARGETS[target](self.SCALE, target_dir=str(tmp_path)).generate()
+        header = (tmp_path / src / "scale_dsp.h").read_text()
+        assert "ScaleDspState* scale_dsp_create(float sr);" in header
+        assert 'extern "C"' in header
+        assert "#include <math.h>" in (tmp_path / src / "scale_dsp.c").read_text()
+        assert build_ref in (tmp_path / build_file).read_text()
+
+    @pytest.mark.parametrize("spec", [SCALE, SINE])
+    def test_pd_source_compiles(self, tmp_path: Path, spec: Path) -> None:
+        PdProject(spec, target_dir=str(tmp_path)).generate()
+        check_c_syntax(tmp_path / spec.stem / f"{spec.stem}.c", "pd")
+
+    @pytest.mark.parametrize("hybrid", [False, True])
+    def test_pd_external_runs_in_pd(self, tmp_path: Path, hybrid: bool) -> None:
+        """Builds with pd-lib-builder and checks outlet values in real Pd.
+
+        The hybrid object also has message outlets and methods; 'bang' and
+        'reset' are sent to it, and their stubs must run.
+        """
+        import subprocess
+
+        pd = find_pd()
+        if pd is None or shutil.which("make") is None:
+            pytest.skip("Pd (set $PD) or make not available")
+        spec = self.write_spec(tmp_path / "scale~.json", **(self.HYBRID if hybrid else {}))
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        project = tmp_path / "out" / "scale~"
+        pd_include = Path(__file__).parents[1] / "src" / "xtgen" / "resources" / "pd"
+        run(["make", f"PDINCLUDEDIR={pd_include}"], cwd=project)
+        patch = SCALE_TEST_PATCH
+        if hybrid:
+            patch += ("#X msg 400 40 bang;\n#X msg 450 40 reset;\n#X connect 1 1 16 0;\n"
+                      "#X connect 1 1 17 0;\n#X connect 16 0 6 0;\n#X connect 17 0 6 0;\n")
+        (project / "run.pd").write_text(patch)
+        result = subprocess.run(
+            [pd, "-nogui", "-batch", "-noaudio", "-nomidi", "-stderr", "-path", ".",
+             "-open", "run.pd"],
+            cwd=project, capture_output=True, text=True, timeout=30,
+        )
+        printed = [line for line in result.stderr.splitlines() if line[:3] in ("L: ", "R: ")]
+        # default gain 0.5, then 2 after the 'gain 2' message; inputs are 1 and 3
+        assert printed == ["L: 0.5", "R: 1.5", "L: 2", "R: 6"], result.stderr
+        if hybrid:
+            assert "bang body" in result.stderr and "reset body" in result.stderr
+
+    def test_clap_applies_graph_and_param_events(self, tmp_path: Path) -> None:
+        """Output is input * 0.5 (default), then * 2.0 from the param event at FRAMES / 2."""
+        ClapProject(self.SCALE, target_dir=str(tmp_path)).generate()
+        build_and_run_clap(tmp_path / "scale", "scale", "test.scale", "gain", "0.5", "2")
+
+    def test_clap_generator_has_no_input_port(self, tmp_path: Path) -> None:
+        ClapProject(self.SINE, target_dir=str(tmp_path)).generate()
+        build_and_run_clap(tmp_path / "sine", "sine", "test.sine", "finite")
+
+    @pytest.mark.parametrize(
+        "ext, target, error",
+        [
+            ({"params": []}, "pd", "'params' come(s) from the 'dsp' graph"),
+            ({"n_channels": 2}, "clap", "'n_channels' come(s) from the 'dsp' graph"),
+            ({"type_methods": [{"type": "float"}]}, "pd", "conflicts with the main signal inlet"),
+            ({"message_methods": [{"name": "gain", "params": ["float"]}]}, "pd", "name of a graph param"),
+            ({"message_methods": [{"name": "gain", "params": ["float"]}]}, "max", "name of a graph param"),
+            ({"message_methods": [{"name": "dsp64", "params": []}]}, "max", "built-in method"),
+            ({"message_methods": [{"name": "dsp", "params": []}]}, "pd", "name of a graph param"),
+            ({"dsp": "missing.gdsp"}, "pd", "'dsp' graph not found"),
+            ({"dsp": 3}, "pd", "'dsp' must be a path"),
+        ],
+    )
+    def test_invalid_dsp_spec_rejected(
+        self, tmp_path: Path, ext: Dict[str, Any], target: str, error: str
+    ) -> None:
+        spec = self.write_spec(tmp_path / "scale~.json", **ext)
+        with pytest.raises(ValueError, match=re.escape(error)):
+            TARGETS[target](spec, target_dir=str(tmp_path)).generate()
+        assert not (tmp_path / "scale~").exists() and not (tmp_path / "scale").exists()
+
+    @pytest.mark.parametrize("target", ["pd", "max"])
+    def test_needs_tilde_filename(self, tmp_path: Path, target: str) -> None:
+        spec = self.write_spec(tmp_path / "scale.json")
+        with pytest.raises(ValueError, match=r"name the spec file 'scale~\.json'"):
+            TARGETS[target](spec).validate()
+
+    def test_pd_hybrid_compiles(self, tmp_path: Path) -> None:
+        """A graph object can also have message outlets and type/message methods."""
+        spec = self.write_spec(tmp_path / "scale~.json", **self.HYBRID)
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        source = tmp_path / "out" / "scale~" / "scale~.c"
+        check_c_syntax(source, "pd")
+        text = source.read_text()
+        assert "x->out_f = outlet_new(&x->x_obj, &s_float);" in text
+        assert 'gensym("reset")' in text and "class_addbang(" in text
+
+    def test_generator_may_have_float_method(self, tmp_path: Path) -> None:
+        """Without a main signal inlet, a 'float' type method is free to use."""
+        shutil.copy(self.DSP_DIR / "sine.gdsp", tmp_path / "sine.gdsp")
+        spec = tmp_path / "sine~.json"
+        spec.write_text(json.dumps({"externals": [{
+            "namespace": "test", "name": "sine", "dsp": "sine.gdsp",
+            "type_methods": [{"type": "float"}],
+            "meta": {"desc": "", "features": [], "author": "", "repo": ""},
+        }]}))
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        check_c_syntax(tmp_path / "out" / "sine~" / "sine~.c", "pd")
+
+    @pytest.mark.parametrize("spec", [SCALE, SINE])
+    def test_max_source_compiles(self, tmp_path: Path, spec: Path) -> None:
+        MaxProject(spec, target_dir=str(tmp_path)).generate()
+        check_c_syntax(tmp_path / spec.stem / f"{spec.stem}.c", "max")
+
+    @pytest.mark.parametrize(
+        "spec, args",
+        [(SCALE, ["2", "2", "gain", "0.5", "2"]), (SINE, ["0", "1"])],
+    )
+    def test_max_external_runs(self, tmp_path: Path, spec: Path, args: List[str]) -> None:
+        """Through a fake Max runtime, with input and output buffers aliased."""
+        MaxProject(spec, target_dir=str(tmp_path)).generate()
+        build_and_run_max(tmp_path / spec.stem, spec.stem.strip("~"), *args)
+
+    def test_max_hybrid_runs(self, tmp_path: Path) -> None:
+        """A Max graph object with outlets and methods still links and runs."""
+        hybrid = {k: v for k, v in self.HYBRID.items()}
+        spec = self.write_spec(tmp_path / "scale~.json", **hybrid)
+        MaxProject(spec, target_dir=str(tmp_path / "out")).generate()
+        source = tmp_path / "out" / "scale~" / "scale~.c"
+        check_c_syntax(source, "max")
+        assert 'class_addmethod(c, (method)scale_set, "set", A_FLOAT, A_FLOAT, 0);' in source.read_text()
+        build_and_run_max(source.parent, "scale", "2", "2", "gain", "0.5", "2")
+
+    @pytest.mark.parametrize(
+        "spec, feature, au_type",
+        [(SCALE, "CLAP_PLUGIN_FEATURE_AUDIO_EFFECT", "aufx"),
+         (SINE, "CLAP_PLUGIN_FEATURE_INSTRUMENT", "aumu")],
+    )
+    def test_clap_generator_is_instrument(
+        self, tmp_path: Path, spec: Path, feature: str, au_type: str
+    ) -> None:
+        """clap-wrapper takes the AU type from the first feature; it builds no 'augn'."""
+        ClapProject(spec, target_dir=str(tmp_path)).generate()
+        name = spec.stem.strip("~")
+        source = (tmp_path / name / f"{name}.c").read_text()
+        features = source[source.index("_features[] = {"):]
+        first = next(line.strip() for line in features.splitlines()[1:] if "FEATURE" in line)
+        assert first.startswith(feature + ",")
+        cmake = (tmp_path / name / "CMakeLists.txt").read_text()
+        assert f'AUV2_INSTRUMENT_TYPE "{au_type}"' in cmake
+
+    @pytest.mark.parametrize("spec, tags", [(SCALE, ["Effect"]), (SINE, [])])
+    def test_vcv_graph_module(self, tmp_path: Path, spec: Path, tags: List[str]) -> None:
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        name = spec.stem.strip("~")
+        manifest = json.loads((tmp_path / name / "plugin.json").read_text())
+        assert manifest["modules"][0]["tags"] == tags
+        module = (tmp_path / name / "src" / f"{name.capitalize()}.cpp").read_text()
+        assert f"{name}_dsp_perform(dsp," in module
+
+    @pytest.mark.skipif(not os.environ.get("RACK_DIR"), reason="RACK_DIR (Rack SDK path) not set")
+    @pytest.mark.parametrize(
+        "spec, args",
+        [(SCALE, ["2", "2", "0.5", "2"]), (SINE, ["0", "1"])],
+    )
+    def test_vcv_graph_runs_in_rack(self, tmp_path: Path, spec: Path, args: List[str]) -> None:
+        """Builds against the Rack SDK and runs the module headless with libRack."""
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        name = spec.stem.strip("~")
+        build_vcv(tmp_path / name)
+        run_in_rack(tmp_path / name, name.capitalize(), *args)
+
+    @pytest.mark.parametrize(
+        "graph, error",
+        [
+            ("graph g {\n in x\n out o = y\n param dsp 0..1 = 0\n y = x * dsp\n}",
+             "shadows a built-in method name"),
+            ("graph g { in x out }", "Invalid 'dsp' graph"),
+        ],
+    )
+    def test_invalid_graph_rejected(self, tmp_path: Path, graph: str, error: str) -> None:
+        spec = self.write_spec(tmp_path / "scale~.json")
+        (tmp_path / "scale.gdsp").write_text(graph)
+        with pytest.raises(ValueError, match=error):
+            PdProject(spec).validate()
+
+    def test_missing_gen_dsp_explained(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+
+        monkeypatch.setitem(sys.modules, "gen_dsp.graph.compile", None)
+        with pytest.raises(ValueError, match=r"pip install 'xtgen\[dsp\]'"):
+            PdProject(self.SCALE).validate()
+
+
+class TestFieldSupport:
+    """pd and max implement the spec fields they accept, and reject the rest."""
+
+    META = {"desc": "", "features": [], "author": "", "repo": ""}
+
+    def write(self, path: Path, **ext: Any) -> Path:
+        path.write_text(json.dumps({"externals": [
+            {"namespace": "test", "name": "thing", "meta": self.META, **ext}]}))
+        return path
+
+    @pytest.mark.parametrize(
+        "filename, ext, target, error",
+        [
+            ("thing.json", {"n_channels": 2}, "pd", "'n_channels'"),
+            ("thing.json", {"n_channels": 2}, "max", "'n_channels'"),
+            ("thing.json", {"help": "help-thing"}, "max", "'help'"),
+            ("thing~.json", {"help": "help-thing"}, "max", "'help'"),
+            ("thing.json", {"type_methods": [{"type": "pointer"}]}, "max", "'pointer'"),
+            ("thing~.json", {"type_methods": [{"type": "float"}]}, "pd", "main signal inlet"),
+        ],
+    )
+    def test_unused_fields_rejected(
+        self, tmp_path: Path, filename: str, ext: Dict[str, Any], target: str, error: str
+    ) -> None:
+        spec = self.write(tmp_path / filename, **ext)
+        with pytest.raises(ValueError, match=re.escape(error)):
+            TARGETS[target](spec, target_dir=str(tmp_path)).generate()
+        assert not any(tmp_path.iterdir()) or list(tmp_path.iterdir()) == [spec]
+
+    @pytest.mark.parametrize(
+        "filename, struct, setup",
+        [("thing.json", "t_abc", "void thing_setup(void)"),
+         ("thing~.json", "t_abc_tilde", "void thing_tilde_setup(void)")],
+    )
+    def test_pd_prefix_names_identifiers(
+        self, tmp_path: Path, filename: str, struct: str, setup: str
+    ) -> None:
+        """'prefix' names the C struct, class and functions; Pd still finds <name>_setup."""
+        spec = self.write(tmp_path / filename, prefix="abc", alias="thg",
+                          type_methods=[{"type": "bang"}])
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        stem = Path(filename).stem
+        source = tmp_path / "out" / stem / f"{stem}.c"
+        text = source.read_text()
+        assert f"}} {struct};" in text and setup in text
+        assert f'class_new(gensym("{stem}")' in text
+        assert "thing_class" not in text and "thing_tilde_class" not in text
+        check_c_syntax(source, "pd")
+
+    @pytest.mark.parametrize("target", ["pd", "max"])
+    def test_control_object_float_method(self, tmp_path: Path, target: str) -> None:
+        """Only a Pd signal inlet takes over floats; control objects and Max keep the method."""
+        for filename in ("thing.json",) + (("thing~.json",) if target == "max" else ()):
+            spec = self.write(tmp_path / filename, type_methods=[{"type": "float"}])
+            TARGETS[target](spec).validate()
+
+    def test_pd_signal_channels(self, tmp_path: Path) -> None:
+        spec = self.write(tmp_path / "thing~.json", n_channels=3)
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        source = tmp_path / "out" / "thing~" / "thing~.c"
+        assert "#define N_CHANNELS 3\n" in source.read_text()
+        check_c_syntax(source, "pd")
+
+    def test_pd_signal_channels_run_in_pd(self, tmp_path: Path) -> None:
+        """Two-channel pass-through in real Pd: each outlet copies its inlet."""
+        import subprocess
+
+        pd = find_pd()
+        if pd is None or shutil.which("make") is None:
+            pytest.skip("Pd (set $PD) or make not available")
+        spec = self.write(tmp_path / "thing~.json", n_channels=2)
+        PdProject(spec, target_dir=str(tmp_path / "out")).generate()
+        project = tmp_path / "out" / "thing~"
+        pd_include = Path(__file__).parents[1] / "src" / "xtgen" / "resources" / "pd"
+        run(["make", f"PDINCLUDEDIR={pd_include}"], cwd=project)
+        (project / "run.pd").write_text(two_channel_patch("thing~"))
+        result = subprocess.run(
+            [pd, "-nogui", "-batch", "-noaudio", "-nomidi", "-stderr", "-path", ".",
+             "-open", "run.pd"],
+            cwd=project, capture_output=True, text=True, timeout=30,
+        )
+        printed = [line for line in result.stderr.splitlines() if line[:3] in ("L: ", "R: ")]
+        assert printed == ["L: 1", "R: 3", "L: 1", "R: 3"], result.stderr
+
+    def test_max_methods_and_alias(self, tmp_path: Path) -> None:
+        """Max registers the spec's type and message methods and its alias."""
+        MaxProject(EXAMPLES_DIR / "counter.yml", target_dir=str(tmp_path)).generate()
+        source = tmp_path / "counter" / "counter.c"
+        text = source.read_text()
+        for line in (
+            'class_addmethod(c, (method)ctr_float, "float", A_FLOAT, 0);',
+            'class_addmethod(c, (method)ctr_symbol, "symbol", A_SYM, 0);',
+            'class_addmethod(c, (method)ctr_bound, "bound", A_FLOAT, A_FLOAT, 0);',
+            'class_addmethod(c, (method)ctr_reset, "reset", 0);',
+            'class_alias(c, gensym("cntr"));',
+            "void ctr_bound(t_ctr *x, double f0, double f1)",
+        ):
+            assert line in text, line
+        # a declared 'bang' replaces the generic one
+        assert text.count('"bang"') == 1
+        check_c_syntax(source, "max")
 
 
 if __name__ == "__main__":

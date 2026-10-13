@@ -1,6 +1,7 @@
 <%
 # Matches the layout in module.cpp.mako: 7 rows per column pair, 4 HP per pair.
-n_rows = len(e.params) + e.n_channels
+n_audio = max(e.dsp.n_inputs, e.dsp.n_outputs) if e.dsp else e.n_channels
+n_rows = len(e.params) + n_audio
 hp = 1 + 4 * max(1, -(-n_rows // 7))
 width = hp * 5.08
 %>\

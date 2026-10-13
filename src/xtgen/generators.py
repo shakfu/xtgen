@@ -192,8 +192,9 @@ class ArgumentBuilder:
         """
         suffix: str = ", 0"
 
+        # Callers write ", <signature>", so no args must yield "0", not ", 0".
         if len(args) == 0:
-            return suffix
+            return "0"
         elif self.type_mapper.needs_gimme([arg.type for arg in args]):
             return "A_GIMME" + suffix
         else:

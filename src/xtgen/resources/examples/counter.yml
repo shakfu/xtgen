@@ -9,8 +9,6 @@ externals:
       - {name: lower, type: float, min: 0.0, max: 0.9, initial: 0.0, arg: true, inlet: false, desc: ""}
       - {name: upper, type: float, min: 0.1, max: 1.0, initial: 1.0, arg: true, inlet: false, desc: ""}
       # - {name: bound, type: list,  min: 0.0, max: 1.0, initial: [0.0, 1.0], arg: false, inlet: true, desc: ""}
-    help: help-counter
-    n_channels: 2
     meta:
       desc: |
         An external which counts via a variable step and optionally between two limits.
@@ -51,9 +49,6 @@ externals:
 
       - type: symbol
         doc: each symbol is printed out
-
-      - type: pointer
-        doc: each pointer is printed out
 
       - type: list
         doc: each list is printed out

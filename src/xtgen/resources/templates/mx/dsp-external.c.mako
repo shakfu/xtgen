@@ -1,4 +1,5 @@
-<% pfx = e.prefix or e.name %>\
+<% pfx = e.prefix or e.name; declared = {m.type for m in e.type_methods} %>\
+<%namespace name="mx" file="/mx/methods.mako"/>\
 /**
     @file
     ${e.namespace}.${e.name}~: ${e.meta['desc']}
@@ -37,8 +38,13 @@ typedef struct _${pfx} {
 void *${pfx}_new(t_symbol *s, long argc, t_atom *argv);
 void ${pfx}_free(t_${pfx} *x);
 void ${pfx}_assist(t_${pfx} *x, void *b, long m, long a, char *s);
+% if "bang" not in declared:
 void ${pfx}_bang(t_${pfx} *x);
+% endif
+% if "anything" not in declared:
 void ${pfx}_anything(t_${pfx} *x, t_symbol *s, long argc, t_atom *argv);
+% endif
+${mx.prototypes(e, pfx)}
 void ${pfx}_dsp64(t_${pfx} *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags);
 void ${pfx}_perform64(t_${pfx} *x, t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags, void *userparam);
 
@@ -53,11 +59,15 @@ void ext_main(void *r)
 {
     t_class *c = class_new("${e.namespace}.${e.name}~", (method)${pfx}_new, (method)${pfx}_free, (long)sizeof(t_${pfx}), 0L, A_GIMME, 0);
 
+% if "anything" not in declared:
     class_addmethod(c, (method)${pfx}_anything, "anything", A_GIMME,   0);
+% endif
+% if "bang" not in declared:
     class_addmethod(c, (method)${pfx}_bang,     "bang",                0);
+% endif
     class_addmethod(c, (method)${pfx}_dsp64,    "dsp64",    A_CANT,    0);
     class_addmethod(c, (method)${pfx}_assist,   "assist",   A_CANT,    0);
-
+${mx.register(e, pfx)}
     class_dspinit(c);
     class_register(CLASS_BOX, c);
     ${pfx}_class = c;
@@ -103,15 +113,21 @@ void ${pfx}_assist(t_${pfx} *x, void *b, long m, long a, char *s)
     }
 }
 
+% if "bang" not in declared:
 void ${pfx}_bang(t_${pfx} *x)
 {
     post("bang");
 }
 
+% endif
+% if "anything" not in declared:
 void ${pfx}_anything(t_${pfx} *x, t_symbol *s, long argc, t_atom *argv)
 {
     post("%s: %ld args", s->s_name, argc);
 }
+
+% endif
+${mx.bodies(e, pfx)}
 
 
 void ${pfx}_dsp64(t_${pfx} *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags)

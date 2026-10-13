@@ -5,7 +5,10 @@ audio externals and their components (parameters, outlets, methods, etc.).
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Union
+from typing import TYPE_CHECKING, List, Optional, Dict, Any, Union
+
+if TYPE_CHECKING:
+    from .dsp import DspGraph
 
 
 class AudioTypeError(ValueError):
@@ -287,6 +290,7 @@ class External:
     message_methods_data: List[Dict[str, Any]] = field(default_factory=list)
     type_methods_data: List[Dict[str, Any]] = field(default_factory=list)
     meta: Optional[Dict[str, Any]] = None
+    dsp: Optional["DspGraph"] = None  # compiled 'dsp' graph, if the spec names one
 
     # Helper components (initialized in __post_init__)
     type_mapper: "TypeMapper" = field(init=False)
@@ -308,8 +312,9 @@ class External:
 
     @property
     def c_name(self) -> str:
-        """Get the C identifier prefix; DSP externals append '_tilde'."""
-        return f"{self.name}_tilde" if self.is_dsp else self.name
+        """Get the C identifier prefix ('prefix', else 'name'); DSP externals append '_tilde'."""
+        base = self.prefix or self.name
+        return f"{base}_tilde" if self.is_dsp else base
 
     @property
     def type(self) -> str:

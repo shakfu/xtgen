@@ -19,7 +19,7 @@ Repo: ${e.meta['repo']}
  * ---------------------------------------------------------------------------
  */
 
-static t_class *${e.name}_class;
+static t_class *${e.c_name}_class;
 
 
 /*
@@ -27,7 +27,7 @@ static t_class *${e.name}_class;
  * ---------------------------------------------------------------------------
  */
 
-typedef struct _${e.name} {
+typedef struct _${e.c_name} {
     t_object x_obj;
 
     /* parameters */
@@ -39,7 +39,7 @@ typedef struct _${e.name} {
     % for o in e.outlets:
     t_outlet *out_${o.name};
     % endfor
-} t_${e.name};
+} ${e.type};
 
 
 /*
@@ -49,7 +49,7 @@ typedef struct _${e.name} {
 
 // typed-methods
 % for method in e.type_methods:
-void ${e.name}_${method.type}(${method.args})
+void ${e.c_name}_${method.type}(${method.args})
 {
     post("${method.type} body");
 }
@@ -58,7 +58,7 @@ void ${e.name}_${method.type}(${method.args})
 
 // message-methods
 % for method in e.message_methods:
-void ${e.name}_${method.name}(${method.args})
+void ${e.c_name}_${method.name}(${method.args})
 {
     % if method.doc:
     // ${method.doc}
@@ -74,9 +74,9 @@ void ${e.name}_${method.name}(${method.args})
  * ---------------------------------------------------------------------------
  */
 
-void *${e.name}_new(${e.class_new_args})
+void *${e.c_name}_new(${e.class_new_args})
 {
-    t_${e.name} *x = (t_${e.name} *)pd_new(${e.name}_class);
+    ${e.type} *x = (${e.type} *)pd_new(${e.c_name}_class);
 
     // initialize variables
     % for p in e.params:
@@ -110,10 +110,10 @@ void *${e.name}_new(${e.class_new_args})
 
 void ${e.name}_setup(void) 
 {
-    ${e.name}_class = class_new(gensym("${e.name}"),
-                            (t_newmethod)${e.name}_new,
+    ${e.c_name}_class = class_new(gensym("${e.name}"),
+                            (t_newmethod)${e.c_name}_new,
                             0, // destructor
-                            sizeof(t_${e.name}),
+                            sizeof(${e.type}),
                             CLASS_DEFAULT,
                             ${e.class_type_signature});
 
@@ -134,7 +134,7 @@ void ${e.name}_setup(void)
 
     % if e.help:
     // set name of default help file
-    class_sethelpsymbol(${e.name}_class, gensym("${e.help}"));
+    class_sethelpsymbol(${e.c_name}_class, gensym("${e.help}"));
     % endif
 }
 

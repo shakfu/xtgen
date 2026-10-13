@@ -2,6 +2,8 @@
 mfr = (e.namespace + "xxxx")[:4]
 mfr = mfr[0].upper() + mfr[1:]
 sub = (e.name + "xxxx")[:4]
+# A generator (no audio input) is a music device: clap-wrapper v0.16 builds no 'augn'.
+au_type = "aumu" if e.dsp and not e.dsp.n_inputs else "aufx"
 %>\
 # ${e.name}: CLAP plugin, wrapped as VST3 (and AUv2 on macOS) by clap-wrapper.
 #
@@ -32,7 +34,7 @@ FetchContent_Declare(clap-wrapper
     GIT_TAG v0.16.0)
 FetchContent_MakeAvailable(clap clap-wrapper)
 
-add_library(${e.name}-impl STATIC ${e.name}.c)
+add_library(${e.name}-impl STATIC ${e.name}.c${f" {e.dsp.prefix}.c" if e.dsp else ""})
 target_link_libraries(${e.name}-impl PUBLIC clap)
 
 set(PLUGIN_FORMATS CLAP VST3)
@@ -53,5 +55,5 @@ make_clapfirst_plugins(
     AUV2_MANUFACTURER_NAME "${e.meta['author']}"
     AUV2_MANUFACTURER_CODE ${"${AUV2_MANUFACTURER_CODE}"}
     AUV2_SUBTYPE_CODE ${"${AUV2_SUBTYPE_CODE}"}
-    AUV2_INSTRUMENT_TYPE "aufx"
+    AUV2_INSTRUMENT_TYPE "${au_type}"
 )

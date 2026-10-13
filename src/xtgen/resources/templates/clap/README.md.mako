@@ -7,7 +7,7 @@ Author: ${e.meta['author']}
 Repo: ${e.meta['repo']}
 
 
-\\## Build
+${'##'} Build
 
 A CLAP plugin. [clap-wrapper](https://github.com/free-audio/clap-wrapper) builds VST3 from it, plus AUv2 on macOS.
 
@@ -20,13 +20,21 @@ The first configure downloads CLAP, clap-wrapper and the VST3/AU SDKs.
 Set the AUv2 codes in `CMakeLists.txt` before shipping an AU.
 
 
-\\## Parameters
+${'##'} Parameters
 % for p in e.params:
 - ${p.name} [${p.min}, ${p.max}] -- default: ${p.initial}
 % endfor
+% if e.dsp:
 
 
-\\## Features:
+${'##'} DSP
+
+`${e.dsp.prefix}.c` is compiled by gen-dsp from `${e.dsp.source}`. Edit the graph and
+regenerate rather than editing the C file.
+% endif
+
+
+${'##'} Features:
 % for feature in e.meta['features']:
 - ${feature}
 % endfor

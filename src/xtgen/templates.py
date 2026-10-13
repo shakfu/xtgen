@@ -9,7 +9,7 @@ import math
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, Tuple
 
 try:
     from importlib.resources import files, as_file
@@ -22,9 +22,9 @@ try:
 except ImportError:
     YAML_AVAILABLE = False
 
-from mako.template import Template
 from mako.lookup import TemplateLookup
 
+from .dsp import DspGraph, load_graph
 from .models import External
 
 
@@ -82,6 +82,7 @@ class Generator:
         self.target_dir: Path = Path(target_dir)
         self.project_path: Path = self.target_dir / self.fullname
         self.model: Optional[External] = None
+        self.dsp: Optional[DspGraph] = None  # set from the spec's 'dsp' field
 
     def cmd(self, command_args: List[str]) -> str:
         """Execute command safely using subprocess.
@@ -173,9 +174,7 @@ class Generator:
             OSError: If the directory cannot be created
         """
         # Validate before writing anything, so a bad spec leaves no partial project.
-        spec_data = self.load_specification()
-        self.validate_specification_structure(spec_data)
-        self.build_external(spec_data["externals"][0])
+        self.validate()
 
         if not force and self.project_path.is_dir() and any(self.project_path.iterdir()):
             raise FileExistsError(
@@ -188,10 +187,72 @@ class Generator:
                 f"Failed to create project directory {self.project_path}: {e}"
             )
 
+    def validate(self) -> Dict[str, Any]:
+        """Load the specification and apply this target's rules without writing.
+
+        Returns:
+            Parsed specification data
+
+        Raises:
+            FileNotFoundError: If specification file not found
+            ValueError: If the specification is invalid for this target
+        """
+        spec_data = self.load_specification()
+        self.validate_specification_structure(spec_data)
+        self.build_external(spec_data["externals"][0])
+        return spec_data
+
     EXTERNAL_KEYS = frozenset({
         "name", "namespace", "prefix", "alias", "help", "n_channels",
-        "params", "outlets", "message_methods", "type_methods", "meta",
+        "params", "outlets", "message_methods", "type_methods", "meta", "dsp",
     })
+    TARGET = "pd"  # name used in error messages
+    SUPPORTS_DSP_GRAPH = False
+    UNUSED_KEYS: Tuple[str, ...] = ()  # fields this target has no use for; rejected
+    DSP_NEEDS_TILDE = True  # pd and max embed a graph only in a signal ('~') external
+
+    def load_dsp(self, ext: Dict[str, Any]) -> None:
+        """Compile the spec's 'dsp' graph and replace its params with the graph's.
+
+        Raises:
+            ValueError: If this target cannot embed a graph, or the graph is invalid
+        """
+        if not self.SUPPORTS_DSP_GRAPH:
+            raise ValueError(f"'dsp' is not supported by the {self.TARGET} target yet")
+        if not isinstance(ext["dsp"], str):
+            raise ValueError("'dsp' must be a path to a .gdsp file")
+        if self.DSP_NEEDS_TILDE and not self.is_dsp:
+            raise ValueError(
+                "'dsp' needs a signal external: name the spec file "
+                f"'{self.spec_file.stem}~{self.spec_file.suffix}'"
+            )
+        # Taken from the graph, so the spec cannot disagree with it.
+        given = [k for k in ("params", "n_channels") if k in ext]
+        if given:
+            raise ValueError(
+                f"{', '.join(map(repr, given))} come(s) from the 'dsp' graph; "
+                "remove from the spec"
+            )
+        if self.dsp is None:
+            self.dsp = load_graph(self.spec_file.parent / ext["dsp"], f"{ext['name']}_dsp")
+        ext["params"] = [dict(p) for p in self.dsp.params]
+        # Each graph param is a method of the same name; dsp/dsp64/assist are built in.
+        taken = {p["name"] for p in self.dsp.params} | {"dsp", "dsp64", "assist"}
+        for m in ext.get("message_methods", []):
+            if m.get("name") in taken:
+                raise ValueError(
+                    f"Message method {m['name']!r} has the name of a graph param "
+                    "or of a built-in method"
+                )
+
+    def write_dsp(self, subdir: str = "") -> None:
+        """Write the compiled graph and its header next to the generated source."""
+        if self.dsp is None:
+            return
+        for suffix, text in ((".c", self.dsp.c_code), (".h", self.dsp.header)):
+            target = self.project_path / subdir / (self.dsp.prefix + suffix)
+            target.write_text(text)
+            print(target, "rendered")
 
     def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
         """Validate specification structure and required fields.
@@ -242,6 +303,19 @@ class Generator:
             raise ValueError(
                 f"External contains unknown field(s): {', '.join(map(repr, unknown))}"
             )
+        unused = [k for k in self.UNUSED_KEYS if k in ext]
+        # Channels only exist on signal objects.
+        if not self.is_dsp and "n_channels" in ext and self.TARGET in ("pd", "max"):
+            unused.append("n_channels")
+        if unused:
+            raise ValueError(
+                f"Field(s) not supported by the {self.TARGET} target: "
+                f"{', '.join(map(repr, unused))}"
+                + ("; n_channels needs a signal object ('~' spec filename)"
+                   if "n_channels" in unused else "")
+            )
+        if "dsp" in ext:
+            self.load_dsp(ext)
 
         # Validate optional fields have correct types
         if "params" in ext and not isinstance(ext["params"], list):
@@ -309,6 +383,7 @@ class Generator:
                 message_methods_data=ext_data.get("message_methods", []),
                 type_methods_data=ext_data.get("type_methods", []),
                 meta=ext_data.get("meta"),
+                dsp=self.dsp if "dsp" in ext_data else None,
             )
             # Components are built lazily; build them now so type errors surface here.
             external.param_objects
@@ -344,8 +419,8 @@ class Generator:
         ext_data: Dict[str, Any] = spec_data["externals"][0]
 
         try:
-            template_path: Path = TEMPLATE_DIR / template
-            templ = Template(filename=str(template_path))
+            # Through the lookup, so templates can import shared defs (<%namespace>).
+            templ = TEMPLATE_LOOKUP.get_template(template)
         except Exception as e:
             raise ValueError(f"Template file not found or invalid: {template}: {e}")
 
@@ -383,6 +458,7 @@ class PluginProject(Generator):
     # Pd/Max object-model fields with no plugin equivalent.
     PD_ONLY_KEYS = ("prefix", "alias", "help", "outlets", "message_methods", "type_methods")
     TARGET = "plugin"  # name used in error messages
+    DSP_NEEDS_TILDE = False
 
     def __init__(
         self, spec_file: Union[str, Path], target_dir: str = OUTPUT_DIR
@@ -456,6 +532,7 @@ class ClapProject(PluginProject):
     """
 
     TARGET = "clap"
+    SUPPORTS_DSP_GRAPH = True
 
     def generate(self, force: bool = False) -> None:
         """Generate the CLAP project.
@@ -470,6 +547,7 @@ class ClapProject(PluginProject):
         self.render("clap/entry.cpp.mako", f"{self.name}_entry.cpp")
         self.render("clap/CMakeLists.txt.mako", "CMakeLists.txt")
         self.render("clap/README.md.mako", "README.md")
+        self.write_dsp()
 
 
 class VcvProject(PluginProject):
@@ -481,6 +559,7 @@ class VcvProject(PluginProject):
     """
 
     TARGET = "vcv"
+    SUPPORTS_DSP_GRAPH = True
 
     def generate(self, force: bool = False) -> None:
         """Generate the VCV Rack plugin project.
@@ -500,6 +579,7 @@ class VcvProject(PluginProject):
         self.render("vcv/module.cpp.mako", f"src/{module}.cpp")
         self.render("vcv/panel.svg.mako", f"res/{module}.svg")
         self.render("vcv/README.md.mako", "README.md")
+        self.write_dsp("src")
 
         # Written with json.dumps, not a template, so spec strings are escaped.
         assert self.model is not None and self.model.meta is not None
@@ -516,7 +596,8 @@ class VcvProject(PluginProject):
                     "slug": module,
                     "name": self.model.name,
                     "description": " ".join(str(meta["desc"]).split()),
-                    "tags": ["Effect"],
+                    # A graph with no audio inputs is a generator, not an effect.
+                    "tags": [] if self.dsp and not self.dsp.n_inputs else ["Effect"],
                 }
             ],
         }
@@ -537,6 +618,22 @@ class MaxProject(Generator):
         # Creates Max/MSP external in build/counter/
     """
 
+    TARGET = "max"
+    SUPPORTS_DSP_GRAPH = True
+    UNUSED_KEYS = ("help",)  # the Max SDK has no call to name a help file
+
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
+        """Validate as for Pd, then reject type methods Max has no message for.
+
+        Raises:
+            ValueError: If the specification is invalid for Max
+        """
+        super().validate_specification_structure(spec_data)
+        for m in spec_data["externals"][0].get("type_methods", []):
+            if m["type"] == "pointer":
+                raise ValueError("Type method 'pointer' is not supported by the max target")
+        return True
+
     def generate(self, force: bool = False) -> None:
         """Generate Max/MSP external project with all required files.
 
@@ -554,13 +651,16 @@ class MaxProject(Generator):
         self.make_project_dir(force)
 
         # Render appropriate external template based on type
-        if self.is_dsp:
+        if self.dsp:
+            self.render("mx/graph-external.c.mako")
+        elif self.is_dsp:
             self.render("mx/dsp-external.c.mako")
         else:
             self.render("mx/external.c.mako")
 
         # Generate documentation
         self.render("mx/README.md.mako", "README.md")
+        self.write_dsp()
 
 
 class PdProject(Generator):
@@ -574,6 +674,25 @@ class PdProject(Generator):
         >>> project.generate()
         # Creates PureData external in build/counter/
     """
+
+    SUPPORTS_DSP_GRAPH = True
+
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
+        """Validate, then reject a float method that a signal inlet would replace.
+
+        Raises:
+            ValueError: If the specification is invalid for Pd
+        """
+        super().validate_specification_structure(spec_data)
+        ext = spec_data["externals"][0]
+        # CLASS_MAINSIGNALIN replaces the class's float method; a graph with no inputs has none.
+        has_signal_inlet = self.is_dsp and (self.dsp is None or self.dsp.n_inputs > 0)
+        if has_signal_inlet and any(m["type"] == "float" for m in ext.get("type_methods", [])):
+            raise ValueError(
+                "A 'float' type method conflicts with the main signal inlet, "
+                "which Pd gives its own float method"
+            )
+        return True
 
     def generate(self, force: bool = False) -> None:
         """Generate PureData external project with all required files.
@@ -604,7 +723,9 @@ class PdProject(Generator):
         shutil.copy2(src_makefile, dst_makefile)
 
         # Render appropriate external template based on type
-        if self.is_dsp:
+        if self.dsp:
+            self.render("pd/graph-external.c.mako")
+        elif self.is_dsp:
             self.render("pd/dsp-external.c.mako")
         else:
             self.render("pd/external.c.mako")
@@ -612,6 +733,7 @@ class PdProject(Generator):
         # Generate build system and documentation
         self.render("pd/Makefile.mako", "Makefile")
         self.render("pd/README.md.mako", "README.md")
+        self.write_dsp()
 
 # CLI target name -> generator class.
 TARGETS: Dict[str, type[Generator]] = {

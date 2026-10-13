@@ -8,7 +8,12 @@ import argparse
 import sys
 from pathlib import Path
 
+from typing import List, Optional
+
 from .templates import TARGETS, get_package_resource_path, OUTPUT_DIR
+
+EXAMPLES_DIR = get_package_resource_path("resources/examples")
+SPEC_SUFFIXES = (".yml", ".yaml", ".json")  # other example files are 'dsp' graphs
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -32,7 +37,8 @@ Examples:
   %(prog)s -t vcv gain.yml                # Generate VCV Rack plugin
   %(prog)s -o /tmp/build counter.yml      # Custom output directory
   %(prog)s -v counter.yml                 # Verbose output
-  %(prog)s --list-examples                # List available examples
+  %(prog)s --list-examples                # List built-in examples and their targets
+  %(prog)s -t clap lowpass~               # Generate from a built-in example by name
 
 Supported file formats:
   .yml, .yaml  - YAML specification files
@@ -64,7 +70,8 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
     parser.add_argument(
         "spec_file",
         nargs="?",
-        help="Path to YAML or JSON specification file (default: counter.yml from examples)",
+        help="Path to YAML or JSON specification file, or the name of a built-in "
+        "example (default: counter)",
         default=None,
     )
 
@@ -127,21 +134,45 @@ Note: YAML support is not available. Install PyYAML to enable YAML file support:
     return parser
 
 
+def find_example(name: str) -> Optional[Path]:
+    """Return the built-in example file for a name, with or without extension.
+
+    A bare stem prefers .yml, then .yaml, then .json.
+    """
+    for ext in ("", ".yml", ".yaml", ".json"):
+        path = EXAMPLES_DIR / (name + ext)
+        if path.is_file() and path.suffix.lower() in SPEC_SUFFIXES:
+            return path
+    return None
+
+
+def example_targets(spec_file: Path) -> List[str]:
+    """Return the targets whose rules accept a specification file."""
+    supported = []
+    for target, generator in TARGETS.items():
+        try:
+            generator(spec_file).validate()
+        except ValueError:
+            continue
+        supported.append(target)
+    return supported
+
+
 def list_examples() -> None:
-    """List available example specification files."""
-    examples_dir = get_package_resource_path("resources/examples")
-    if not examples_dir.exists():
-        print("No examples directory found.")
+    """List built-in example specifications and the targets each builds for."""
+    examples = sorted(
+        p for p in EXAMPLES_DIR.glob("*") if p.suffix.lower() in SPEC_SUFFIXES
+    )
+    if not examples:
+        print("No built-in examples found.")
         return
 
-    print("Available example specification files:")
-    print("=====================================")
-
-    for file_path in sorted(examples_dir.glob("*")):
-        if file_path.suffix.lower() in [".yml", ".yaml", ".json"]:
-            print(f"  {file_path}")
-
-    print("\nUsage: xtgen <example_file>")
+    width = max(len(p.name) for p in examples)
+    print("Built-in examples:")
+    for path in examples:
+        print(f"  {path.name:<{width}}  {', '.join(example_targets(path))}")
+    print(f"\nLocation: {EXAMPLES_DIR}")
+    print("Usage: xtgen [-t TARGET] <name>    e.g. xtgen -t vcv gain")
 
 
 def validate_specification(
@@ -161,10 +192,7 @@ def validate_specification(
         if verbose:
             print(f"Validating specification file: {spec_file}")
 
-        generator = TARGETS[target](spec_file)
-        spec_data = generator.load_specification()
-        generator.validate_specification_structure(spec_data)
-        generator.build_external(spec_data["externals"][0])
+        spec_data = TARGETS[target](spec_file).validate()
 
         if verbose:
             print("✓ File format valid")
@@ -213,20 +241,18 @@ def main() -> int:
         list_examples()
         return 0
 
-    # Handle default specification file
-    if args.spec_file is None:
-        # Use default example file
-        default_spec = get_package_resource_path("resources/examples/counter.yml")
-        if not default_spec.exists():
-            # Fallback to JSON if YAML example not available
-            default_spec = get_package_resource_path("resources/examples/counter.json")
-        spec_file = default_spec
-    else:
-        spec_file = Path(args.spec_file)
-
+    # An existing path wins over a built-in example of the same name.
+    spec_name = args.spec_file or "counter"
+    spec_file = Path(spec_name)
     if not spec_file.exists():
-        print(f"Error: Specification file not found: {spec_file}", file=sys.stderr)
-        return 1
+        example = find_example(spec_name)
+        if example is None:
+            print(
+                f"Error: Specification file or built-in example not found: {spec_name}",
+                file=sys.stderr,
+            )
+            return 1
+        spec_file = example
 
     # Handle validation-only mode
     if args.validate:

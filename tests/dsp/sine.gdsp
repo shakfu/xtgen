@@ -1,0 +1,6 @@
+# Test graph: a generator (no audio inputs).
+graph sine {
+    out output = s
+    param freq 20..2000 = 440
+    s = sinosc(freq)
+}

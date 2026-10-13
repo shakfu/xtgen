@@ -1,0 +1,10 @@
+# Resonant lowpass for the reslp~ example: a state-variable filter per channel.
+graph reslp {
+    in left, right
+    out out_l = lp_l
+    out out_r = lp_r
+    param cutoff 20..20000 = 1000
+    param q 0.5..20 = 0.707
+    lp_l = svf(left, cutoff, q, mode=lp)
+    lp_r = svf(right, cutoff, q, mode=lp)
+}
