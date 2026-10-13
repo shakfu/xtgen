@@ -86,7 +86,7 @@ The package requires:
 
 - PyYAML (YAML parsing)
 
-- Optional, for `dsp` graphs: gen-dsp with its graph frontend (`xtgen[dsp]`, which pulls in pydantic). It needs gen-dsp 0.6.0 or later, which adds C output and its header. Specs without `dsp` do not need it.
+- Optional, for `dsp` graphs: gen-dsp with its graph frontend (`xtgen[dsp]`, which pulls in pydantic). It needs gen-dsp 0.6.1 or later. Specs without `dsp` do not need it.
 
 ## Usage
 

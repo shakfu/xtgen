@@ -1294,7 +1294,7 @@ def build_and_run_clap(src: Path, name: str, plugin_id: str, *mode: str) -> None
     dsp_c = src / f"{name}_dsp.c"
     if dsp_c.is_file():
         objs.append(src / "dsp.o")
-        run([cc, "-std=c99", *warn, "-c", str(dsp_c), "-o", str(objs[-1])])
+        run([cc, "-std=c99", *warn, "-Wshadow", "-c", str(dsp_c), "-o", str(objs[-1])])
     run([cxx, "-o", str(src / "host"), *map(str, objs)])
     run([str(src / "host"), plugin_id, *mode])
 
@@ -1310,7 +1310,7 @@ def build_and_run_max(src: Path, name: str, *args: str) -> None:
     for source in (mx / "fake_max.c", mx / "graph_host.c", src / f"{name}~.c", src / f"{name}_dsp.c"):
         objs.append(src / (source.stem + ".o"))
         # gen-dsp's C is held to -Werror; the Max-API casts in the rest are not -Wextra clean.
-        flags = ["-Wall", "-Wextra", "-Werror"] if source.stem.endswith("_dsp") else []
+        flags = ["-Wall", "-Wextra", "-Wshadow", "-Werror"] if source.stem.endswith("_dsp") else []
         run([cc, "-std=c99", *flags, *inc, "-c", str(source), "-o", str(objs[-1])])
     run([cc, "-o", str(src / "host"), *map(str, objs), "-lm"])
     run([str(src / "host"), *args])
@@ -1895,6 +1895,11 @@ class TestDspGraph:
             ("graph g {\n in x\n out o = y\n param dsp 0..1 = 0\n y = x * dsp\n}",
              "shadows a built-in method name"),
             ("graph g { in x out }", "Invalid 'dsp' graph"),
+            # gen-dsp reserves perform()'s locals and "_"-prefixed IDs for generated names.
+            ("graph g {\n in x\n out o = n\n n = x * 2\n}",
+             r"Invalid 'dsp' graph .*ID 'n' is reserved"),
+            ("graph g {\n in x\n out o = _y\n _y = x * 2\n}",
+             r"Invalid 'dsp' graph .*ID '_y' starts with '_'"),
         ],
     )
     def test_invalid_graph_rejected(self, tmp_path: Path, graph: str, error: str) -> None:

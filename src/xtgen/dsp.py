@@ -3,7 +3,7 @@
 A spec's ``dsp`` field names the graph. The graph supplies the params and the
 audio input/output counts; the target calls its ``create``, ``perform`` and
 ``set_param`` functions. Requires the optional ``gen-dsp[graph]`` dependency,
-version 0.6.0 or later (``lang="c"`` and ``compile_graph_header``).
+version 0.6.1 or later.
 """
 
 import re
@@ -43,7 +43,7 @@ def load_graph(path: Path, prefix: str) -> DspGraph:
         from gen_dsp.graph.dsl import parse_file
     except ImportError as e:
         raise ValueError(
-            f"'dsp' needs gen-dsp 0.6.0 or later with its graph frontend ({e}); "
+            f"'dsp' needs gen-dsp 0.6.1 or later with its graph frontend ({e}); "
             "install it with: pip install 'xtgen[dsp]'"
         )
     if not path.is_file():

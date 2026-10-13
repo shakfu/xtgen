@@ -23,8 +23,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # Compiles a spec's 'dsp' graph (.gdsp) to C: needs compile_graph(lang="c") and
-# compile_graph_header(), both new in 0.6.0.
-dsp = ["gen-dsp[graph]>=0.6.0"]
+# compile_graph_header() (0.6.0), and node IDs that cannot shadow generated locals (0.6.1).
+dsp = ["gen-dsp[graph]>=0.6.1"]
 
 
 [project.scripts]
@@ -37,12 +37,17 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
-    "gen-dsp[graph]>=0.6.0",
+    "gen-dsp[graph]>=0.6.1",
     "mypy>=1.18.2",
     "pytest>=8.4.2",
     "ruff>=0.13.1",
     "types-pyyaml>=6.0.12.20250915",
 ]
+
+
+# Until gen-dsp 0.6.1 is on PyPI; remove after publishing.
+[tool.uv.sources]
+gen-dsp = { path = "../gen-dsp", editable = true }
 
 
 [build-system]

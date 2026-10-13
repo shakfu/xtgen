@@ -22,6 +22,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Release
 
 - gen-dsp is installed from PyPI, where 0.6.0 is now published, not from `../gen-dsp`.
 
+- `dsp` needs gen-dsp 0.6.1. Up to 0.6.0, a graph node could reuse the name of one of gen-dsp's generated locals, e.g. node `wt_len` beside Buffer `wt`, and `buf_read` then read past the table in `<name>_dsp.c`. gen-dsp 0.6.1 rejects IDs that would shadow its `perform()` locals; xtgen reports them as `Invalid 'dsp' graph`. Tests compile `_dsp.c` with `-Wshadow`. Until 0.6.1 is on PyPI, `[tool.uv.sources]` resolves gen-dsp from `../gen-dsp` again.
+
 ### Added
 
 - `plugin.modulated` makes a CLAP param modulatable. The plugin adds `CLAP_EVENT_PARAM_MOD` amounts to the value DSP reads, clamped to the param's range. This replaces the old behaviour, where CLAP ignored `inlet: true`. For graph DSP, `plugin.modulated` may name graph params, which also gives VCV graph modules CV inputs.

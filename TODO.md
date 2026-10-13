@@ -6,11 +6,7 @@
 
 ## Medium
 
-- [ ] Raise the gen-dsp floor to the first release after 0.6.1. It is `gen-dsp[graph]>=0.6.0` in `pyproject.toml` and 0.6.0 in `src/xtgen/dsp.py`'s docstring and ImportError message. Up to 0.6.1, a node ID could share a name with a gen-dsp generated local, e.g. node `wt_len` beside Buffer `wt`. `buf_read(wt, ...)` then clamps its index against the node's value, not the table length: a silent out-of-bounds read in `<name>_dsp.c`. Nodes named `n`, `i`, `sr`, `self`, `ins` or `outs` shadow `perform()` locals the same way. See gen-dsp's CHANGELOG, `[Unreleased]` / Fixed.
-
-- [ ] After the bump, add `-Wshadow` to the `_dsp.c` flags in `build_and_run_clap()` and `build_and_run_max()` (`tests/test_xtgen.py`). gen-dsp's compile tests now build every graph with `-Wall -Wextra -Wshadow -Werror`.
-
-- [ ] After the bump, test that `load_graph()` reports a reserved ID as `Invalid 'dsp' graph`. gen-dsp's `compile_graph` now raises `ValueError` for the six names above (a SampleRate node may be `sr`) and for IDs starting with `_` unless they end in `_<digits>`. `load_graph()` already wraps that error; the test pins the message.
+- [ ] Remove `[tool.uv.sources]` from `pyproject.toml` once gen-dsp 0.6.1 is on PyPI, then run `uv lock`. Until then xtgen resolves gen-dsp from `../gen-dsp`.
 
 ## Low
 

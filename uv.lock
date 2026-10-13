@@ -22,16 +22,34 @@ wheels = [
 
 [[package]]
 name = "gen-dsp"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c6/c4/2e7219ad742abce3971e4de6c4cc29d40ef56e2aec1178d358f23b85f255/gen_dsp-0.6.0.tar.gz", hash = "sha256:6d77358cce0460d01fb8ffc641db84ffd548d66624bbd4d83499ff27b7b366aa", size = 443764, upload-time = "2026-10-13T07:56:19.122Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/71/e46372fea6b810348618fc96977b91219fdca42df7f1175ab66b7ad9ed37/gen_dsp-0.6.0-py3-none-any.whl", hash = "sha256:318d7f443137cf4710a46900a6afcd58d3d1353a214c3ba2519c84db30209fe3", size = 536858, upload-time = "2026-10-13T07:56:17.607Z" },
-]
+version = "0.6.1"
+source = { editable = "../gen-dsp" }
 
 [package.optional-dependencies]
 graph = [
     { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", marker = "extra == 'sim'", specifier = ">=1.24" },
+    { name = "py2tosc", marker = "extra == 'tosc'", specifier = ">=0.6.0" },
+    { name = "pydantic", marker = "extra == 'graph'", specifier = ">=2.0" },
+    { name = "pydantic", marker = "extra == 'sim'", specifier = ">=2.0" },
+]
+provides-extras = ["graph", "sim", "tosc"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "minihost", marker = "python_full_version < '3.15'", specifier = ">=0.11.0" },
+    { name = "mypy", specifier = ">=2.4.0" },
+    { name = "numpy", specifier = ">=2.4.6" },
+    { name = "py2tosc", specifier = ">=0.6.0" },
+    { name = "pydantic", specifier = ">=2.14.0" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "ruff", specifier = ">=0.17.0" },
+    { name = "twine", specifier = ">=7.0.0" },
 ]
 
 [[package]]
@@ -370,7 +388,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "gen-dsp", extras = ["graph"], marker = "extra == 'dsp'", specifier = ">=0.6.0" },
+    { name = "gen-dsp", extras = ["graph"], marker = "extra == 'dsp'", editable = "../gen-dsp" },
     { name = "mako", specifier = ">=1.3.10" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
@@ -378,7 +396,7 @@ provides-extras = ["dsp"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "gen-dsp", extras = ["graph"], specifier = ">=0.6.0" },
+    { name = "gen-dsp", extras = ["graph"], editable = "../gen-dsp" },
     { name = "mypy", specifier = ">=1.18.2" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.13.1" },
