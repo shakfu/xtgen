@@ -22,7 +22,7 @@ Set the AUv2 codes in `CMakeLists.txt` before shipping an AU.
 
 ${'##'} Parameters
 % for p in e.params:
-- ${p.name} [${p.min}, ${p.max}] -- default: ${p.initial}
+- ${p.name} [${p.min}, ${p.max}] -- default: ${p.initial}${" (modulatable)" if p.has_inlet else ""}
 % endfor
 % if e.dsp:
 

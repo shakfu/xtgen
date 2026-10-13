@@ -1,5 +1,4 @@
-externals:
-  - namespace: test
-    name: scale
-    dsp: scale.gdsp
-    meta: {desc: "test gain graph", features: [], author: xtgen, repo: ""}
+namespace: test
+name: scale
+dsp: scale.gdsp
+meta: {desc: "test gain graph", features: [], author: xtgen, repo: ""}

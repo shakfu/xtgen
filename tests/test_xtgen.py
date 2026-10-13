@@ -271,18 +271,14 @@ class TestParamCodegen:
 
     def test_symbol_param_renders(self, tmp_path: Path) -> None:
         spec = {
-            "externals": [
-                {
-                    "namespace": "t",
-                    "name": "symobj",
-                    "params": [
-                        {"name": "label", "type": "symbol", "initial": 'a"b',
-                         "arg": True, "inlet": True},
-                        {"name": "tag", "type": "symbol", "arg": False, "inlet": False},
-                    ],
-                    "meta": {"desc": "", "author": "", "repo": "", "features": []},
-                }
-            ]
+            "namespace": "t",
+            "name": "symobj",
+            "params": [
+                {"name": "label", "type": "symbol", "initial": 'a"b'},
+                {"name": "tag", "type": "symbol"},
+            ],
+            "meta": {"desc": "", "author": "", "repo": "", "features": []},
+            "external": {"args": ["label"], "inlets": ["label"]},
         }
         spec_path = tmp_path / "symobj.json"
         spec_path.write_text(json.dumps(spec))
@@ -311,14 +307,14 @@ class TestSpecificationProcessing:
     def test_valid_yaml_processing(self) -> None:
         """Test processing of valid YAML file."""
         yaml_content: str = """
-externals:
-  - namespace: test
-    name: simple
-    prefix: smp
-    params: []
-    outlets: []
-    message_methods: []
-    type_methods: []
+namespace: test
+name: simple
+params: []
+external:
+  prefix: smp
+  outlets: []
+  message_methods: []
+  type_methods: []
 """
         # Create file with specific name so we can test name detection
         temp_dir: str = tempfile.mkdtemp()
@@ -337,14 +333,14 @@ externals:
     def test_dsp_external_detection(self) -> None:
         """Test DSP external detection from filename."""
         yaml_content: str = """
-externals:
-  - namespace: test
-    name: osc
-    prefix: osc
-    params: []
-    outlets: []
-    message_methods: []
-    type_methods: []
+namespace: test
+name: osc
+params: []
+external:
+  prefix: osc
+  outlets: []
+  message_methods: []
+  type_methods: []
 """
         temp_dir: str = tempfile.mkdtemp()
         yaml_path: Path = Path(temp_dir) / "osc~.yml"
@@ -361,17 +357,15 @@ externals:
     def test_valid_json_processing(self) -> None:
         """Test processing of valid JSON file."""
         json_content: str = '''{
-  "externals": [
-    {
-      "namespace": "test",
-      "name": "simple",
-      "prefix": "smp",
-      "params": [],
-      "outlets": [],
-      "message_methods": [],
-      "type_methods": []
-    }
-  ]
+  "namespace": "test",
+  "name": "simple",
+  "params": [],
+  "external": {
+    "prefix": "smp",
+    "outlets": [],
+    "message_methods": [],
+    "type_methods": []
+  }
 }'''
         # Create file with specific name so we can test name detection
         temp_dir: str = tempfile.mkdtemp()
@@ -390,17 +384,15 @@ externals:
     def test_dsp_external_detection_json(self) -> None:
         """Test DSP external detection from JSON filename."""
         json_content: str = '''{
-  "externals": [
-    {
-      "namespace": "test",
-      "name": "osc",
-      "prefix": "osc",
-      "params": [],
-      "outlets": [],
-      "message_methods": [],
-      "type_methods": []
-    }
-  ]
+  "namespace": "test",
+  "name": "osc",
+  "params": [],
+  "external": {
+    "prefix": "osc",
+    "outlets": [],
+    "message_methods": [],
+    "type_methods": []
+  }
 }'''
         temp_dir: str = tempfile.mkdtemp()
         json_path: Path = Path(temp_dir) / "osc~.json"
@@ -418,14 +410,14 @@ externals:
         """Test automatic format detection for files without standard extensions."""
         # Test YAML content with unknown extension
         yaml_content: str = """
-externals:
-  - namespace: test
-    name: fallback_yaml
-    prefix: fy
-    params: []
-    outlets: []
-    message_methods: []
-    type_methods: []
+namespace: test
+name: fallback_yaml
+params: []
+external:
+  prefix: fy
+  outlets: []
+  message_methods: []
+  type_methods: []
 """
         temp_dir: str = tempfile.mkdtemp()
         fallback_path: Path = Path(temp_dir) / "fallback.txt"
@@ -435,23 +427,21 @@ externals:
         try:
             generator: Generator = Generator(fallback_path)
             spec_data = generator.load_specification()
-            assert spec_data["externals"][0]["name"] == "fallback_yaml"
+            assert spec_data["name"] == "fallback_yaml"
         finally:
             shutil.rmtree(temp_dir)
 
         # Test JSON content with unknown extension
         json_content: str = '''{
-  "externals": [
-    {
-      "namespace": "test",
-      "name": "fallback_json",
-      "prefix": "fj",
-      "params": [],
-      "outlets": [],
-      "message_methods": [],
-      "type_methods": []
-    }
-  ]
+  "namespace": "test",
+  "name": "fallback_json",
+  "params": [],
+  "external": {
+    "prefix": "fj",
+    "outlets": [],
+    "message_methods": [],
+    "type_methods": []
+  }
 }'''
         temp_dir = tempfile.mkdtemp()
         fallback_path = Path(temp_dir) / "fallback.txt"
@@ -461,7 +451,7 @@ externals:
         try:
             generator = Generator(fallback_path)
             spec_data = generator.load_specification()
-            assert spec_data["externals"][0]["name"] == "fallback_json"
+            assert spec_data["name"] == "fallback_json"
         finally:
             shutil.rmtree(temp_dir)
 
@@ -480,35 +470,34 @@ class TestProjectGeneration:
     def sample_yaml_file(self, temp_dir: str) -> Path:
         """Create a sample YAML file for testing."""
         yaml_content: str = """
-externals:
-  - namespace: test
-    name: testobj
-    alias: testobj
-    help: help-testobj
-    params:
-      - name: value
-        type: float
-        min: 0.0
-        max: 1.0
-        initial: 0.5
-        arg: true
-        inlet: false
-        desc: "test value"
-    outlets:
-      - name: out
-        type: float
-    message_methods:
-      - name: set
-        params: [float]
-        doc: "set the value"
-    type_methods:
-      - type: bang
-        doc: "output current value"
-    meta:
-      desc: "A test object"
-      author: "test"
-      repo: "https://github.com/test/testobj"
-      features: ["simple test"]
+namespace: test
+name: testobj
+params:
+  - name: value
+    type: float
+    min: 0.0
+    max: 1.0
+    initial: 0.5
+    desc: "test value"
+meta:
+  desc: "A test object"
+  author: "test"
+  repo: "https://github.com/test/testobj"
+  features: ["simple test"]
+external:
+  alias: testobj
+  help: help-testobj
+  args: [value]
+  outlets:
+    - name: out
+      type: float
+  message_methods:
+    - name: set
+      params: [float]
+      doc: "set the value"
+  type_methods:
+    - type: bang
+      doc: "output current value"
 """
         yaml_path: Path = Path(temp_dir) / "testobj.yml"
         with open(yaml_path, "w") as f:
@@ -552,7 +541,7 @@ externals:
         """Without 'help', Pd keeps its class-name default instead of 'None'."""
         spec_path: Path = Path(temp_dir) / spec_name
         spec_path.write_text(
-            sample_yaml_file.read_text().replace("    help: help-testobj\n", "")
+            sample_yaml_file.read_text().replace("  help: help-testobj\n", "")
         )
         PdProject(spec_path, target_dir=temp_dir).generate()
 
@@ -577,7 +566,7 @@ externals:
         """Test Max/MSP project generation."""
         # Max has no help-file call, so it rejects 'help'.
         sample_yaml_file.write_text(
-            sample_yaml_file.read_text().replace("    help: help-testobj\n", "")
+            sample_yaml_file.read_text().replace("  help: help-testobj\n", "")
         )
         project: MaxProject = MaxProject(sample_yaml_file, target_dir=temp_dir)
         project.generate()
@@ -627,7 +616,7 @@ externals:
         text = get_test_resource_path("resources/examples/counter.yml").read_text()
         if spec_name.endswith("~.yml"):
             # A signal object rejects a float method; its signal inlet takes floats.
-            text = text.replace("      - type: float\n        doc: each number is printed out\n\n", "")
+            text = text.replace("    - type: float\n      doc: each number is printed out\n\n", "")
             assert "- type: float" not in text
         spec.write_text(text)
         PdProject(spec, target_dir=temp_dir).generate()
@@ -712,51 +701,48 @@ externals:
     def test_json_project_generation(self, temp_dir: str) -> None:
         """Test project generation using JSON specification file."""
         json_content: str = '''{
-  "externals": [
+  "namespace": "test",
+  "name": "jsonobj",
+  "params": [
     {
-      "namespace": "test",
-      "name": "jsonobj",
-      "alias": "jsonobj",
-      "help": "help-jsonobj",
-      "params": [
-        {
-          "name": "value",
-          "type": "float",
-          "min": 0.0,
-          "max": 1.0,
-          "initial": 0.5,
-          "arg": true,
-          "inlet": false,
-          "desc": "test value"
-        }
-      ],
-      "outlets": [
-        {
-          "name": "out",
-          "type": "float"
-        }
-      ],
-      "message_methods": [
-        {
-          "name": "set",
-          "params": ["float"],
-          "doc": "set the value"
-        }
-      ],
-      "type_methods": [
-        {
-          "type": "bang",
-          "doc": "output current value"
-        }
-      ],
-      "meta": {
-        "desc": "A test object from JSON",
-        "author": "test",
-        "repo": "https://github.com/test/jsonobj",
-        "features": ["json test"]
-      }
+      "name": "value",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "initial": 0.5,
+      "desc": "test value"
     }
-  ]
+  ],
+  "meta": {
+    "desc": "A test object from JSON",
+    "author": "test",
+    "repo": "https://github.com/test/jsonobj",
+    "features": ["json test"]
+  },
+  "external": {
+    "alias": "jsonobj",
+    "help": "help-jsonobj",
+    "args": ["value"],
+    "outlets": [
+      {
+        "name": "out",
+        "type": "float"
+      }
+    ],
+    "message_methods": [
+      {
+        "name": "set",
+        "params": ["float"],
+        "doc": "set the value"
+      }
+    ],
+    "type_methods": [
+      {
+        "type": "bang",
+        "doc": "output current value"
+      }
+    ]
+  }
 }'''
         json_path: Path = Path(temp_dir) / "jsonobj.json"
         with open(json_path, "w") as f:
@@ -951,49 +937,57 @@ class TestErrorHandling:
             os.unlink(yaml_path)
 
     @pytest.fixture
-    def two_externals_json(self, tmp_path: Path) -> Path:
+    def externals_list_json(self, tmp_path: Path) -> Path:
         path = tmp_path / "pair.json"
-        path.write_text(
-            '{"externals": ['
-            '{"namespace": "my", "name": "first"},'
-            '{"namespace": "my", "name": "second"}]}'
-        )
+        path.write_text('{"externals": [{"namespace": "my", "name": "first"}]}')
         return path
 
-    def test_multiple_externals_rejected(self, two_externals_json: Path) -> None:
-        """Extra externals must raise, not be silently dropped."""
-        generator = Generator(two_externals_json)
-        with pytest.raises(ValueError, match="exactly one external"):
+    def test_externals_list_rejected(self, externals_list_json: Path) -> None:
+        """The pre-0.3 'externals' list fails with a migration hint."""
+        generator = Generator(externals_list_json)
+        with pytest.raises(ValueError, match="'externals' is no longer supported"):
             generator.validate_specification_structure(generator.load_specification())
 
     @pytest.mark.parametrize(
         "extra, error",
         [
-            ('"inlets": [{"name": "bound", "type": "list"}]', "'inlet: true' on each param"),
-            ('"outlet": []', "unknown field\\(s\\): 'outlet'"),
+            ('"inlets": ["p"]', "'inlets' belongs in the 'external' block"),
+            ('"modulated": ["p"]', "'modulated' belongs in the 'plugin' block"),
+            ('"outlet": []', "unknown field: 'outlet'"),
+            ('"external": {"outlet": []}', "'external' contains unknown field\\(s\\): 'outlet'"),
+            ('"external": []', "'external' must be a dictionary"),
+            ('"external": {"args": "p"}', "'external.args' must be a list of param names"),
+            ('"external": {"args": ["p", "p"]}', "names a param twice"),
+            ('"external": {"inlets": ["q"]}', "'external.inlets' names unknown param 'q'"),
+            # The other target's block is checked too.
+            ('"plugin": {"modulated": ["q"]}', "'plugin.modulated' names unknown param 'q'"),
+            ('"params": [{"name": "p", "type": "float", "arg": true}]', "'arg'.* moved to"),
+            ('"params": [{"name": "p", "type": "float", "inlet": true}]', "'inlet'.* moved to"),
+            ('"params": [{"name": "p", "type": "float", "unit": "Hz"}]', "unknown field\\(s\\): 'unit'"),
         ],
     )
-    def test_unread_external_keys_rejected(
+    def test_unread_keys_rejected(
         self, tmp_path: Path, extra: str, error: str
     ) -> None:
         """Keys render() never reads must raise, not be silently dropped."""
         path = tmp_path / "ext.json"
+        params = '' if '"params"' in extra else '"params": [{"name": "p", "type": "float"}], '
         path.write_text(
-            '{"externals": [{"namespace": "my", "name": "ext", ' + extra + ", "
-            '"meta": {"desc": "d", "features": [], "author": "a", "repo": "r"}}]}'
+            '{"namespace": "my", "name": "ext", ' + params + extra + ", "
+            '"meta": {"desc": "d", "features": [], "author": "a", "repo": "r"}}'
         )
         generator = Generator(path)
         with pytest.raises(ValueError, match=error):
             generator.validate_specification_structure(generator.load_specification())
 
-    def test_multiple_externals_cli(self, two_externals_json: Path, tmp_path: Path) -> None:
-        """Both --validate and generate must fail on a multi-external spec."""
+    def test_externals_list_cli(self, externals_list_json: Path, tmp_path: Path) -> None:
+        """Both --validate and generate must fail on a pre-0.3 spec."""
         import sys
         from unittest.mock import patch
 
         out_dir = tmp_path / "out"
         for args in (["--validate"], ["-o", str(out_dir)]):
-            with patch.object(sys, "argv", ["xtgen", *args, str(two_externals_json)]):
+            with patch.object(sys, "argv", ["xtgen", *args, str(externals_list_json)]):
                 assert main() == 1
         assert not (out_dir / "pair" / "pair.c").exists()
 
@@ -1002,13 +996,13 @@ class TestErrorHandling:
     @pytest.mark.parametrize(
         "body, error",
         [
-            ('"outlets": [{"name": "o", "type": "int"}], ' + META, "Invalid outlet type"),
-            ('"type_methods": [{"type": "foo"}], ' + META, "Invalid type method"),
+            ('"external": {"outlets": [{"name": "o", "type": "int"}]}, ' + META, "Invalid outlet type"),
+            ('"external": {"type_methods": [{"type": "foo"}]}, ' + META, "Invalid type method"),
             ('"params": [{"name": "p", "type": "bad"}], ' + META, "Invalid parameter type"),
-            ('"outlets": [{"type": "float"}], ' + META, "Outlet must contain required field: 'name'"),
-            ('"message_methods": [{"params": []}], ' + META, "Message method must contain"),
-            ('"type_methods": [{"doc": "x"}], ' + META, "Type method must contain"),
-            ('"outlets": []', "'meta' dictionary"),
+            ('"external": {"outlets": [{"type": "float"}]}, ' + META, "Outlet must contain required field: 'name'"),
+            ('"external": {"message_methods": [{"params": []}]}, ' + META, "Message method must contain"),
+            ('"external": {"type_methods": [{"doc": "x"}]}, ' + META, "Type method must contain"),
+            ('"external": {"outlets": []}', "'meta' dictionary"),
             ('"meta": {"desc": "d"}', "'meta' must contain required field"),
         ],
     )
@@ -1020,7 +1014,7 @@ class TestErrorHandling:
         from unittest.mock import patch
 
         spec = tmp_path / "bad.json"
-        spec.write_text('{"externals": [{"namespace": "my", "name": "bad", ' + body + "}]}")
+        spec.write_text('{"namespace": "my", "name": "bad", ' + body + "}")
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         for args in (["--validate"], ["-o", str(out_dir)]):
@@ -1210,10 +1204,8 @@ class TestCommandLineInterface:
 
         # Create a test YAML file
         yaml_content = """
-externals:
-  - name: test
-    params: []
-    outlets: []
+name: test
+params: []
 """
         yaml_file = Path(temp_dir) / "test.yml"
         yaml_file.write_text(yaml_content)
@@ -1232,11 +1224,8 @@ externals:
 
         # Create a test JSON file
         json_content = """{
-    "externals": [{
-        "name": "test",
-        "params": [],
-        "outlets": []
-    }]
+    "name": "test",
+    "params": []
 }"""
         json_file = Path(temp_dir) / "test.json"
         json_file.write_text(json_content)
@@ -1248,7 +1237,7 @@ externals:
             # Should work fine with JSON
             spec = project.load_specification()
             assert spec is not None
-            assert "externals" in spec
+            assert spec["name"] == "test"
 
     @pytest.fixture
     def temp_dir(self) -> TypingGenerator[str, None, None]:
@@ -1262,10 +1251,10 @@ PLUGIN_META = {"desc": "d", "features": ["f"], "author": "a", "repo": "r"}
 
 
 def write_plugin_spec(path: Path, **ext: Any) -> Path:
-    """Write a one-external JSON spec with plugin defaults overridden by `ext`."""
+    """Write a JSON spec with plugin defaults overridden by `ext`."""
     data: Dict[str, Any] = {"namespace": "my", "name": path.stem.strip("~"), "meta": PLUGIN_META}
     data.update(ext)
-    path.write_text(json.dumps({"externals": [data]}))
+    path.write_text(json.dumps(data))
     return path
 
 
@@ -1378,33 +1367,35 @@ class TestPluginTargets:
             assert (tmp_path / "gain" / name).is_file(), name
 
     @pytest.mark.parametrize("target", ["clap", "vcv"])
-    def test_counter_example_rejected(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], target: str
-    ) -> None:
-        """Pd-only fields fail both --validate and generation, naming the fields."""
-        import sys
-        from unittest.mock import patch
-
+    def test_external_block_ignored(self, tmp_path: Path, target: str) -> None:
+        """Plugins read only the 'plugin' block; counter's 'external' block is for pd and max."""
         counter = get_test_resource_path("resources/examples/counter.yml")
-        for args in (["--validate"], ["-o", str(tmp_path)]):
-            with patch.object(sys, "argv", ["xtgen", "-t", target, *args, str(counter)]):
-                assert main() == 1
-            err = capsys.readouterr().err
-            assert f"not supported by the {target} target" in err
-            assert "'outlets'" in err and "'alias'" in err
-        assert not (tmp_path / "counter").exists()
+        project = TARGETS[target](counter, target_dir=str(tmp_path))
+        project.generate()
+        assert project.model is not None
+        assert project.model.outlets == [] and project.model.alias == "counter"
+        assert not any(p.has_inlet or p.is_arg for p in project.model.params)
+
+    def test_plugin_block_ignored(self, tmp_path: Path) -> None:
+        """pd reads only the 'external' block: a modulated param gets no inlet."""
+        spec = tmp_path / "gain~.yml"
+        shutil.copy(self.GAIN, spec)
+        project = PdProject(spec, target_dir=str(tmp_path))
+        project.generate()
+        assert project.model is not None
+        assert not any(p.has_inlet for p in project.model.params)
 
     def test_validate_uses_target_rules(self) -> None:
         counter = get_test_resource_path("resources/examples/counter.yml")
         assert validate_specification(counter, target="pd")
-        assert not validate_specification(counter, target="clap")
+        assert not validate_specification(self.GAIN, target="pd")
         assert validate_specification(self.GAIN, target="clap")
 
     @pytest.mark.parametrize(
         "ext, error",
         [
             ({"params": [{"name": "s", "type": "symbol", "min": 0, "max": 1}]}, "only float params"),
-            ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1, "arg": True}]}, "'arg' is not supported"),
+            ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1, "arg": True}]}, "'arg'.* moved to"),
             ({"params": [{"name": "p", "type": "float", "max": 1}]}, "must set 'min'"),
             ({"params": [{"name": "p", "type": "float", "min": 0, "max": 1, "initial": 2}]}, "min <= initial <= max"),
             ({"params": [{"name": "p", "type": "float", "min": 1, "max": 1, "initial": 1}]}, "min < max"),
@@ -1414,7 +1405,10 @@ class TestPluginTargets:
             ({"name": "my-gain"}, "'name' must be an ASCII identifier"),
             ({"namespace": "a.b"}, "'namespace' must be an ASCII identifier"),
             ({"n_channels": 0}, "positive integer"),
-            ({"help": "help-x"}, "'help'"),
+            ({"help": "help-x"}, "'help' belongs in the 'external' block"),
+            ({"plugin": {"modulated": ["nope"]}}, "'plugin.modulated' names unknown param 'nope'"),
+            ({"plugin": {"cv": []}}, "'plugin' contains unknown field\\(s\\): 'cv'"),
+            ({"external": {"args": ["nope"]}}, "'external.args' names unknown param 'nope'"),
         ],
     )
     @pytest.mark.parametrize("target", ["clap", "vcv"])
@@ -1445,6 +1439,14 @@ class TestPluginTargets:
         assert manifest["modules"][0] == {
             "slug": "Gain", "name": "gain", "description": "line one line two", "tags": ["Effect"],
         }
+
+    def test_clap_modulatable_flags(self, tmp_path: Path) -> None:
+        """Only params listed in 'plugin.modulated' are CLAP modulatable."""
+        ClapProject(self.GAIN, target_dir=str(tmp_path)).generate()
+        source = (tmp_path / "gain" / "gain.c").read_text()
+        specs = source[source.index("_param_specs[PARAM_COUNT + 1] = {"):]
+        assert '{ "gain", 0.0, 2.0, 1.0,\n      CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_MODULATABLE },' in specs
+        assert '{ "pan", -1.0, 1.0, 0.0,\n      CLAP_PARAM_IS_AUTOMATABLE },' in specs
 
     def test_vcv_panel_widens_with_rows(self, tmp_path: Path) -> None:
         """7 rows per 4 HP column pair: 9 params + 1 channel need 2 pairs = 9 HP."""
@@ -1506,8 +1508,8 @@ class TestBuiltinExamples:
 
     ALL = ["pd", "max", "clap", "vcv"]
     MATRIX = {
-        "counter.json": ["pd", "max"],
-        "counter.yml": ["pd", "max"],
+        "counter.json": ALL,  # plugins ignore its 'external' block
+        "counter.yml": ALL,
         "gain.yml": ["clap", "vcv"],  # n_channels without '~': plugins only
         "lowpass~.yml": ALL,
         "oscil~.yml": ALL,
@@ -1541,8 +1543,8 @@ class TestBuiltinExamples:
         import sys
         from unittest.mock import patch
 
-        spec = {"externals": [{"name": "local", "namespace": "my",
-                               "meta": {"desc": "", "features": [], "author": "", "repo": ""}}]}
+        spec = {"name": "local", "namespace": "my",
+                "meta": {"desc": "", "features": [], "author": "", "repo": ""}}
         (tmp_path / "gain.json").write_text(json.dumps(spec))
         monkeypatch.chdir(tmp_path)
         with patch.object(sys, "argv", ["xtgen", "-q", "-o", "out", "gain.json"]):
@@ -1669,12 +1671,12 @@ class TestDspGraph:
     DSP_DIR = Path(__file__).parent / "dsp"
     SCALE = DSP_DIR / "scale~.yml"  # stereo gain, param gain 0..2 = 0.5
     SINE = DSP_DIR / "sine~.yml"  # generator: no audio inputs
-    HYBRID = {
+    HYBRID = {"external": {
         "outlets": [{"name": "f", "type": "float"}, {"name": "b", "type": "bang"}],
         "type_methods": [{"type": "bang"}, {"type": "list"}],
         "message_methods": [{"name": "reset", "params": []},
                             {"name": "set", "params": ["float", "float"]}],
-    }
+    }}
 
     @pytest.fixture(autouse=True)
     def _needs_gen_dsp(self) -> None:
@@ -1684,12 +1686,12 @@ class TestDspGraph:
         shutil.copy(self.DSP_DIR / "scale.gdsp", path.parent / "scale.gdsp")
         base = {"namespace": "test", "name": "scale", "dsp": "scale.gdsp",
                 "meta": {"desc": "", "features": [], "author": "", "repo": ""}}
-        path.write_text(json.dumps({"externals": [{**base, **ext}]}))
+        path.write_text(json.dumps({**base, **ext}))
         return path
 
     def test_graph_supplies_params(self) -> None:
         spec = PdProject(self.SCALE).validate()
-        assert spec["externals"][0]["params"] == [
+        assert spec["params"] == [
             {"name": "gain", "type": "float", "min": 0.0, "max": 2.0, "initial": 0.5}
         ]
 
@@ -1755,6 +1757,19 @@ class TestDspGraph:
         ClapProject(self.SCALE, target_dir=str(tmp_path)).generate()
         build_and_run_clap(tmp_path / "scale", "scale", "test.scale", "gain", "0.5", "2")
 
+    def test_clap_modulates_graph_param(self, tmp_path: Path) -> None:
+        """A CLAP_EVENT_PARAM_MOD of +1.5 on gain 0.5 gives input * 2.0, leaving the value at 0.5."""
+        spec = self.write_spec(tmp_path / "scale~.json", plugin={"modulated": ["gain"]})
+        ClapProject(spec, target_dir=str(tmp_path)).generate()
+        build_and_run_clap(tmp_path / "scale", "scale", "test.scale", "mod", "0.5", "2")
+
+    def test_vcv_graph_param_takes_cv(self, tmp_path: Path) -> None:
+        spec = self.write_spec(tmp_path / "scale~.json", plugin={"modulated": ["gain"]})
+        VcvProject(spec, target_dir=str(tmp_path)).generate()
+        module = (tmp_path / "scale" / "src" / "Scale.cpp").read_text()
+        assert ("scale_dsp_set_param(dsp, 0, clamp(params[GAIN_PARAM].getValue() "
+                "+ inputs[GAIN_CV_INPUT].getVoltage() / 10.f * 2.0f,") in module
+
     def test_clap_generator_has_no_input_port(self, tmp_path: Path) -> None:
         ClapProject(self.SINE, target_dir=str(tmp_path)).generate()
         build_and_run_clap(tmp_path / "sine", "sine", "test.sine", "finite")
@@ -1764,11 +1779,14 @@ class TestDspGraph:
         [
             ({"params": []}, "pd", "'params' come(s) from the 'dsp' graph"),
             ({"n_channels": 2}, "clap", "'n_channels' come(s) from the 'dsp' graph"),
-            ({"type_methods": [{"type": "float"}]}, "pd", "conflicts with the main signal inlet"),
-            ({"message_methods": [{"name": "gain", "params": ["float"]}]}, "pd", "name of a graph param"),
-            ({"message_methods": [{"name": "gain", "params": ["float"]}]}, "max", "name of a graph param"),
-            ({"message_methods": [{"name": "dsp64", "params": []}]}, "max", "built-in method"),
-            ({"message_methods": [{"name": "dsp", "params": []}]}, "pd", "name of a graph param"),
+            ({"external": {"type_methods": [{"type": "float"}]}}, "pd", "conflicts with the main signal inlet"),
+            ({"external": {"message_methods": [{"name": "gain", "params": ["float"]}]}}, "pd", "name of a graph param"),
+            ({"external": {"message_methods": [{"name": "gain", "params": ["float"]}]}}, "max", "name of a graph param"),
+            ({"external": {"message_methods": [{"name": "dsp64", "params": []}]}}, "max", "built-in method"),
+            ({"external": {"message_methods": [{"name": "dsp", "params": []}]}}, "pd", "name of a graph param"),
+            ({"external": {"inlets": ["gain"]}}, "pd", "cannot name graph params"),
+            ({"external": {"args": ["gain"]}}, "max", "cannot name graph params"),
+            ({"plugin": {"modulated": ["cutoff"]}}, "clap", "'plugin.modulated' names unknown param 'cutoff'"),
             ({"dsp": "missing.gdsp"}, "pd", "'dsp' graph not found"),
             ({"dsp": 3}, "pd", "'dsp' must be a path"),
         ],
@@ -1801,11 +1819,11 @@ class TestDspGraph:
         """Without a main signal inlet, a 'float' type method is free to use."""
         shutil.copy(self.DSP_DIR / "sine.gdsp", tmp_path / "sine.gdsp")
         spec = tmp_path / "sine~.json"
-        spec.write_text(json.dumps({"externals": [{
+        spec.write_text(json.dumps({
             "namespace": "test", "name": "sine", "dsp": "sine.gdsp",
-            "type_methods": [{"type": "float"}],
+            "external": {"type_methods": [{"type": "float"}]},
             "meta": {"desc": "", "features": [], "author": "", "repo": ""},
-        }]}))
+        }))
         PdProject(spec, target_dir=str(tmp_path / "out")).generate()
         check_c_syntax(tmp_path / "out" / "sine~" / "sine~.c", "pd")
 
@@ -1825,8 +1843,7 @@ class TestDspGraph:
 
     def test_max_hybrid_runs(self, tmp_path: Path) -> None:
         """A Max graph object with outlets and methods still links and runs."""
-        hybrid = {k: v for k, v in self.HYBRID.items()}
-        spec = self.write_spec(tmp_path / "scale~.json", **hybrid)
+        spec = self.write_spec(tmp_path / "scale~.json", **self.HYBRID)
         MaxProject(spec, target_dir=str(tmp_path / "out")).generate()
         source = tmp_path / "out" / "scale~" / "scale~.c"
         check_c_syntax(source, "max")
@@ -1902,8 +1919,7 @@ class TestFieldSupport:
     META = {"desc": "", "features": [], "author": "", "repo": ""}
 
     def write(self, path: Path, **ext: Any) -> Path:
-        path.write_text(json.dumps({"externals": [
-            {"namespace": "test", "name": "thing", "meta": self.META, **ext}]}))
+        path.write_text(json.dumps({"namespace": "test", "name": "thing", "meta": self.META, **ext}))
         return path
 
     @pytest.mark.parametrize(
@@ -1911,10 +1927,10 @@ class TestFieldSupport:
         [
             ("thing.json", {"n_channels": 2}, "pd", "'n_channels'"),
             ("thing.json", {"n_channels": 2}, "max", "'n_channels'"),
-            ("thing.json", {"help": "help-thing"}, "max", "'help'"),
-            ("thing~.json", {"help": "help-thing"}, "max", "'help'"),
-            ("thing.json", {"type_methods": [{"type": "pointer"}]}, "max", "'pointer'"),
-            ("thing~.json", {"type_methods": [{"type": "float"}]}, "pd", "main signal inlet"),
+            ("thing.json", {"external": {"help": "help-thing"}}, "max", "'external.help'"),
+            ("thing~.json", {"external": {"help": "help-thing"}}, "max", "'external.help'"),
+            ("thing.json", {"external": {"type_methods": [{"type": "pointer"}]}}, "max", "'pointer'"),
+            ("thing~.json", {"external": {"type_methods": [{"type": "float"}]}}, "pd", "main signal inlet"),
         ],
     )
     def test_unused_fields_rejected(
@@ -1934,8 +1950,8 @@ class TestFieldSupport:
         self, tmp_path: Path, filename: str, struct: str, setup: str
     ) -> None:
         """'prefix' names the C struct, class and functions; Pd still finds <name>_setup."""
-        spec = self.write(tmp_path / filename, prefix="abc", alias="thg",
-                          type_methods=[{"type": "bang"}])
+        spec = self.write(tmp_path / filename, external={
+            "prefix": "abc", "alias": "thg", "type_methods": [{"type": "bang"}]})
         PdProject(spec, target_dir=str(tmp_path / "out")).generate()
         stem = Path(filename).stem
         source = tmp_path / "out" / stem / f"{stem}.c"
@@ -1949,7 +1965,7 @@ class TestFieldSupport:
     def test_control_object_float_method(self, tmp_path: Path, target: str) -> None:
         """Only a Pd signal inlet takes over floats; control objects and Max keep the method."""
         for filename in ("thing.json",) + (("thing~.json",) if target == "max" else ()):
-            spec = self.write(tmp_path / filename, type_methods=[{"type": "float"}])
+            spec = self.write(tmp_path / filename, external={"type_methods": [{"type": "float"}]})
             TARGETS[target](spec).validate()
 
     def test_pd_signal_channels(self, tmp_path: Path) -> None:

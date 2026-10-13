@@ -5,6 +5,14 @@ d = e.dsp
 n_in = d.n_inputs if d else e.n_channels
 n_out = d.n_outputs if d else e.n_channels
 up = lambda s: s.upper()
+def value(p):
+    """C++ expression for a param's value: the knob, plus CV for a modulated param."""
+    knob = f"params[{up(p.name)}_PARAM].getValue()"
+    if not p.has_inlet:
+        return knob
+    # 10 V of CV spans the full parameter range.
+    return (f"clamp({knob} + inputs[{up(p.name)}_CV_INPUT].getVoltage() / 10.f * {float(p.max - p.min)!r}f,\n"
+            f"                {float(p.min)!r}f, {float(p.max)!r}f)")
 # Layout: one row per param (knob, CV input) then per channel (in, out).
 # Columns of 7 rows; each column pair is 4 HP wide.
 rows = [("param", p) for p in e.params] + [("audio", i) for i in range(1, max(n_in, n_out) + 1)]
@@ -109,7 +117,7 @@ struct ${module} : Module {
                 return;
         }
 % for i, p in enumerate(e.params):
-        ${d.prefix}_set_param(dsp, ${i}, params[${up(p.name)}_PARAM].getValue());
+        ${d.prefix}_set_param(dsp, ${i}, ${value(p)});
 % endfor
 
         // Rack audio is +-5 V; the graph works on +-1.
@@ -136,12 +144,7 @@ struct ${module} : Module {
     void process(const ProcessArgs &args) override
     {
 % for p in e.params:
-        float ${p.name} = params[${up(p.name)}_PARAM].getValue();
-% if p.has_inlet:
-        // 10 V of CV spans the full parameter range.
-        ${p.name} = clamp(${p.name} + inputs[${up(p.name)}_CV_INPUT].getVoltage() / 10.f * ${repr(float(p.max - p.min))}f,
-                ${repr(float(p.min))}f, ${repr(float(p.max))}f);
-% endif
+        float ${p.name} = ${value(p)};
         (void)${p.name};
 % endfor
 

@@ -42,7 +42,7 @@ Alternatively, a spec can name a `.gdsp` file: signal processing (oscillators, f
 
 - **Built-in examples**, named on the command line (`xtgen -t vcv reslp~`). `--list-examples` shows the targets each one builds for, found by validating it against every target
 
-- **Test suite** of 205 tests. Generated code is compiled and run: Pd externals in real Pd, Max externals in a fake Max runtime, CLAP plugins in a test host, and VCV modules headless against libRack
+- **Test suite** of 246 tests. Generated code is compiled and run: Pd externals in real Pd, Max externals in a fake Max runtime, CLAP plugins in a test host, and VCV modules headless against libRack
 
 - **Support for both regular and DSP** (signal processing) externals
 
@@ -86,7 +86,7 @@ The package requires:
 
 - PyYAML (YAML parsing)
 
-- Optional, for `dsp` graphs: gen-dsp with its graph frontend (`xtgen[dsp]`, which pulls in pydantic). It needs gen-dsp 0.6.0 or later, which adds C output and its header. Until 0.6.0 is on PyPI, `pyproject.toml` installs it from `../gen-dsp`. Specs without `dsp` do not need it.
+- Optional, for `dsp` graphs: gen-dsp with its graph frontend (`xtgen[dsp]`, which pulls in pydantic). It needs gen-dsp 0.6.0 or later, which adds C output and its header. Specs without `dsp` do not need it.
 
 ## Usage
 
@@ -301,130 +301,135 @@ make help        # Show available targets
 
 External specifications can be defined in either YAML or JSON format. Both formats support the same structure and features.
 
-A spec holds one entry under `externals`. In Pd and Max, inlets and outlets are an object's input and output connections in a patch. A spec filename ending in `~` (e.g. `lowpass~.yml`) makes a signal (audio-rate) object for `pd` and `max`; the plugin targets always process audio.
+A spec describes one object. Its top-level fields are a core that every target reads. Two optional blocks hold the fields of one object model:
+
+- `external`: the Pd/Max object model, read by `pd` and `max`.
+- `plugin`: the plugin model, read by `clap` and `vcv`.
+
+A target reads its own block and ignores the other, so one spec can carry both and build for all four targets. Both blocks are still checked for unknown fields and unknown param names.
+
+In Pd and Max, inlets and outlets are an object's input and output connections in a patch. A spec filename ending in `~` (e.g. `lowpass~.yml`) makes a signal (audio-rate) object for `pd` and `max`; the plugin targets always process audio.
+
+Core fields:
 
 | Field | Meaning |
 |-|-|
 | `name` | Object name. The Pd class is `name`, or `name~` for a signal object. Required. |
 | `namespace` | Group name. The Max class and the CLAP id are `namespace.name`; it is also the VCV plugin slug. Required. |
-| `prefix` | Prefix of the C struct, class and function names (default: `name`). Pd still names its setup function after `name`. |
-| `alias` | A second name the object can be created by. |
-| `help` | Pd only: name of the object's help patch. Max has no call to set one and rejects it. |
+| `params` | Parameters. Each has `name`, `type` (`float` or `symbol`), `min`, `max`, `initial` and `desc`. |
 | `n_channels` | Number of audio channels: signal inlets and outlets for a `pd` or `max` signal object, ports for CLAP, jacks for VCV. Rejected on a control object. |
-| `params` | Parameters. Each has `name`, `type` (`float` or `symbol`), `min`, `max`, `initial` and `desc`. `arg: true` sets it from a creation argument (Pd). `inlet: true` gives it its own inlet (Pd) or CV input (VCV). |
-| `outlets` | Message outlets, each with `name` and `type` (`bang`, `float`, `symbol`, `pointer`, `list` or `anything`). |
-| `message_methods` | Named messages the object handles, such as `reset`. Each lists its argument types in `params`. Generated as stubs. |
-| `type_methods` | Handlers for incoming messages by type (`bang`, `float`, `symbol`, `pointer`, `list` or `anything`). Generated as stubs. Max has no `pointer` messages and rejects that type. A `pd` signal object rejects `float`, because Pd sends floats on its left inlet to the audio input; a graph with no audio inputs has no signal inlet and keeps it. |
 | `meta` | `desc`, `features`, `author` and `repo`, copied into comments and the generated README. Required. |
 | `dsp` | A `.gdsp` file whose compiled DSP the object runs. See [DSP Graphs](#dsp-graphs). |
 
-Every target rejects, with an error, a field it cannot use, rather than ignore it. For `clap` and `vcv`, see [Plugin Targets](#plugin-targets).
+`external` block:
+
+| Field | Meaning |
+|-|-|
+| `prefix` | Prefix of the C struct, class and function names (default: `name`). Pd still names its setup function after `name`. |
+| `alias` | A second name the object can be created by. |
+| `help` | Pd only: name of the object's help patch. Max has no call to set one and rejects it. |
+| `args` | Names of params set from creation arguments (Pd). |
+| `inlets` | Names of params that get their own inlet (Pd). |
+| `outlets` | Message outlets, each with `name` and `type` (`bang`, `float`, `symbol`, `pointer`, `list` or `anything`). |
+| `message_methods` | Named messages the object handles, such as `reset`. Each lists its argument types in `params`. Generated as stubs. |
+| `type_methods` | Handlers for incoming messages by type (`bang`, `float`, `symbol`, `pointer`, `list` or `anything`). Generated as stubs. Max has no `pointer` messages and rejects that type. A `pd` signal object rejects `float`, because Pd sends floats on its left inlet to the audio input; a graph with no audio inputs has no signal inlet and keeps it. |
+
+`plugin` block:
+
+| Field | Meaning |
+|-|-|
+| `modulated` | Names of params that take modulation: a CV input in VCV, `CLAP_PARAM_IS_MODULATABLE` in CLAP. |
+
+A target rejects, with an error, a field it cannot use, rather than ignore it. The other target's block is the exception. For `clap` and `vcv`, see [Plugin Targets](#plugin-targets).
 
 ### YAML Format
 
 ```yaml
-externals:
-  - namespace: my
-    name: counter
-    prefix: ctr
-    alias: cntr
-    help: help-counter
-    params:
-
-      - name: step
-        type: float
-        min: 0.0
-        max: 1.0
-        initial: 0.5
-        arg: true
-        inlet: true
-        desc: "step size"
-    outlets:
-
-      - name: out
-        type: float
-    message_methods:
-
-      - name: reset
-        params: []
-        doc: "reset counter to zero"
-    type_methods:
-
-      - type: bang
-        doc: "increment counter"
-    meta:
-      desc: "A simple counter external"
-      author: "Your Name"
-      repo: "https://github.com/yourname/counter"
-      features: ["counting", "resettable"]
+namespace: my
+name: counter
+params:
+  - name: step
+    type: float
+    min: 0.0
+    max: 1.0
+    initial: 0.5
+    desc: "step size"
+meta:
+  desc: "A simple counter external"
+  author: "Your Name"
+  repo: "https://github.com/yourname/counter"
+  features: ["counting", "resettable"]
+external:
+  prefix: ctr
+  alias: cntr
+  help: help-counter
+  args: [step]
+  inlets: [step]
+  outlets:
+    - name: out
+      type: float
+  message_methods:
+    - name: reset
+      params: []
+      doc: "reset counter to zero"
+  type_methods:
+    - type: bang
+      doc: "increment counter"
+plugin:
+  modulated: [step]
 ```
 
 ### JSON Format
 
 ```json
 {
-  "externals": [
+  "namespace": "my",
+  "name": "counter",
+  "params": [
     {
-      "namespace": "my",
-      "name": "counter",
-      "prefix": "ctr",
-      "alias": "cntr",
-      "help": "help-counter",
-      "params": [
-        {
-          "name": "step",
-          "type": "float",
-          "min": 0.0,
-          "max": 1.0,
-          "initial": 0.5,
-          "arg": true,
-          "inlet": true,
-          "desc": "step size"
-        }
-      ],
-      "outlets": [
-        {
-          "name": "out",
-          "type": "float"
-        }
-      ],
-      "message_methods": [
-        {
-          "name": "reset",
-          "params": [],
-          "doc": "reset counter to zero"
-        }
-      ],
-      "type_methods": [
-        {
-          "type": "bang",
-          "doc": "increment counter"
-        }
-      ],
-      "meta": {
-        "desc": "A simple counter external",
-        "author": "Your Name",
-        "repo": "https://github.com/yourname/counter",
-        "features": ["counting", "resettable"]
-      }
+      "name": "step",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "initial": 0.5,
+      "desc": "step size"
     }
-  ]
+  ],
+  "meta": {
+    "desc": "A simple counter external",
+    "author": "Your Name",
+    "repo": "https://github.com/yourname/counter",
+    "features": ["counting", "resettable"]
+  },
+  "external": {
+    "prefix": "ctr",
+    "alias": "cntr",
+    "help": "help-counter",
+    "args": ["step"],
+    "inlets": ["step"],
+    "outlets": [{"name": "out", "type": "float"}],
+    "message_methods": [{"name": "reset", "params": [], "doc": "reset counter to zero"}],
+    "type_methods": [{"type": "bang", "doc": "increment counter"}]
+  },
+  "plugin": {
+    "modulated": ["step"]
+  }
 }
 ```
 
 ### Plugin Targets
 
-`clap` and `vcv` read a subset of the spec. The built-in `gain`, `oscil~`, `lowpass~` and `reslp~` examples are valid for them.
+`clap` and `vcv` read the core fields and the `plugin` block. Every built-in example is valid for them; `counter` builds as a pass-through plugin with its three params.
 
-- Read: `name`, `namespace`, `n_channels`, `meta`, `params`, and `dsp` (see [DSP Graphs](#dsp-graphs)).
-
-- Rejected with an error: `prefix`, `alias`, `help`, `outlets`, `message_methods`, `type_methods`, and `arg: true` on a param. These have no plugin equivalent.
+- Ignored: the `external` block.
 
 - Params must be `type: float` and set finite `min` and `max`, with `min < max` and `min <= initial <= max`.
 
 - `name`, `namespace`, and param names must be ASCII identifiers. They become C identifiers, the CLAP id `namespace.name`, and the VCV slugs.
 
-- `inlet: true` adds a CV input for the param in VCV. CLAP ignores it; every CLAP param is automatable.
+- Every CLAP param is automatable. A param in `plugin.modulated` is also modulatable: the plugin adds each `CLAP_EVENT_PARAM_MOD` amount to the param's value, clamped to its range. The offset is not saved and not reported by `get_value`.
+
+- In VCV, a param in `plugin.modulated` gets a CV input. 10 V of CV spans the param's full range.
 
 - A `~` in the spec filename is ignored. Plugins always process audio.
 
@@ -447,18 +452,21 @@ graph reslp {
 ```
 
 ```yaml
-externals:
-  - namespace: my
-    name: reslp
-    dsp: reslp.gdsp
-    meta: {desc: "A resonant lowpass.", features: [], author: me, repo: ""}
+namespace: my
+name: reslp
+dsp: reslp.gdsp
+meta: {desc: "A resonant lowpass.", features: [], author: me, repo: ""}
+plugin:
+  modulated: [cutoff]
 ```
 
 - Targets: all four. The graph supplies the params (name, min, max, default) and the audio input and output counts; the spec must not set `params` or `n_channels`.
 
+- `plugin.modulated` may name graph params. `external.args` and `external.inlets` may not, because the graph templates set each param by a message of its name.
+
 - `pd` and `max` need a `~` spec filename. Each param is set by a `<name> <value>` message, clamped to its range.
 
-- `pd` also renders `outlets`, `message_methods` and `type_methods`, so an object can mix graph DSP with message handling. As on any `pd` signal object, a `float` type method is rejected when the graph has audio inputs. A message method with the same name as a param, or as a built-in method (`dsp`, `dsp64`, `assist`), is also rejected.
+- `pd` also renders `external.outlets`, `external.message_methods` and `external.type_methods`, so an object can mix graph DSP with message handling. As on any `pd` signal object, a `float` type method is rejected when the graph has audio inputs. A message method with the same name as a param, or as a built-in method (`dsp`, `dsp64`, `assist`), is also rejected.
 
 - `max` has no generated build file: add `<name>_dsp.c` to the external's sources.
 
@@ -500,7 +508,7 @@ externals:
 
 - [x] **Comprehensive type system** with validation and error handling
 
-- [x] **Test suite** (205 tests, including CLI tests and runs of generated code)
+- [x] **Test suite** (246 tests, including CLI tests and runs of generated code)
 
 - [x] **Type safety** with mypy validation
 

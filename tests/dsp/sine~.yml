@@ -1,5 +1,4 @@
-externals:
-  - namespace: test
-    name: sine
-    dsp: sine.gdsp
-    meta: {desc: "test generator graph", features: [], author: xtgen, repo: ""}
+namespace: test
+name: sine
+dsp: sine.gdsp
+meta: {desc: "test generator graph", features: [], author: xtgen, repo: ""}

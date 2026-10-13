@@ -1,14 +1,15 @@
 # DSP from a gen-dsp graph: reslp.gdsp supplies the params, channels and audio code.
 # Needs the optional dependency: pip install 'xtgen[dsp]'.
-externals:
-  - namespace: my
-    name: reslp
-    dsp: reslp.gdsp
-    meta:
-      desc: |
-        A stereo resonant lowpass filter.
-      features:
-        - state-variable lowpass per channel
-        - cutoff in Hz and resonance (q)
-      author: xtgen
-      repo: https://github.com/xtgen/reslp.git
+namespace: my
+name: reslp
+dsp: reslp.gdsp
+meta:
+  desc: |
+    A stereo resonant lowpass filter.
+  features:
+    - state-variable lowpass per channel
+    - cutoff in Hz and resonance (q)
+  author: xtgen
+  repo: https://github.com/xtgen/reslp.git
+plugin:
+  modulated: [cutoff]

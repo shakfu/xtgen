@@ -1,10 +1,12 @@
 /* Minimal CLAP host for tests: links a generated plugin and exercises it.
  *
- * Usage: host <plugin-id> [pass | finite | gain G0 G1]. Prints "ok" and exits 0
- * on success. The mode sets the expected audio, with param 0 set to its max at
- * FRAMES / 2: pass (default) copies input to output; finite only requires
- * finite output (generators have no input port); gain expects input * G0 before
- * the event and input * G1 from it on.
+ * Usage: host <plugin-id> [pass | finite | gain G0 G1 | mod G0 G1]. Prints "ok"
+ * and exits 0 on success. The mode sets the expected audio, with param 0 set to
+ * its max at FRAMES / 2: pass (default) copies input to output; finite only
+ * requires finite output (generators have no input port); gain expects input * G0
+ * before the event and input * G1 from it on. mod is gain, but param 0 must be
+ * modulatable and reaches its max by a CLAP_EVENT_PARAM_MOD, which leaves its
+ * value unchanged.
  */
 
 #include <clap/clap.h>
@@ -28,7 +30,11 @@
 extern const clap_plugin_entry_t clap_entry;
 
 /* Event list holding at most one param event. */
-static clap_event_param_value_t g_event;
+static union {
+    clap_event_header_t header;
+    clap_event_param_value_t value;
+    clap_event_param_mod_t mod;
+} g_event;
 static uint32_t g_n_events;
 
 static uint32_t events_size(const clap_input_events_t *list)
@@ -56,12 +62,28 @@ static const clap_output_events_t g_out_events = {NULL, out_try_push};
 static void set_event(uint32_t time, clap_id id, double value)
 {
     memset(&g_event, 0, sizeof(g_event));
-    g_event.header.size = sizeof(g_event);
+    g_event.header.size = sizeof(g_event.value);
     g_event.header.time = time;
     g_event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
     g_event.header.type = CLAP_EVENT_PARAM_VALUE;
-    g_event.param_id = id;
-    g_event.value = value;
+    g_event.value.param_id = id;
+    g_event.value.value = value;
+    g_n_events = 1;
+}
+
+static void set_mod_event(uint32_t time, clap_id id, double amount)
+{
+    memset(&g_event, 0, sizeof(g_event));
+    g_event.header.size = sizeof(g_event.mod);
+    g_event.header.time = time;
+    g_event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    g_event.header.type = CLAP_EVENT_PARAM_MOD;
+    g_event.mod.param_id = id;
+    g_event.mod.note_id = -1;
+    g_event.mod.port_index = -1;
+    g_event.mod.channel = -1;
+    g_event.mod.key = -1;
+    g_event.mod.amount = amount;
     g_n_events = 1;
 }
 
@@ -105,7 +127,9 @@ int main(int argc, char **argv)
 {
     CHECK(argc == 2 || argc == 3 || argc == 5);
     const char *mode = argc > 2 ? argv[2] : "pass";
-    CHECK(!strcmp(mode, "pass") || !strcmp(mode, "finite") || (!strcmp(mode, "gain") && argc == 5));
+    const bool mod = !strcmp(mode, "mod");
+    const bool gain = mod || !strcmp(mode, "gain");
+    CHECK(!strcmp(mode, "pass") || !strcmp(mode, "finite") || (gain && argc == 5));
     CHECK(clap_entry.init("."));
     const clap_plugin_factory_t *factory = clap_entry.get_factory(CLAP_PLUGIN_FACTORY_ID);
     CHECK(factory && factory->get_plugin_count(factory) == 1);
@@ -160,8 +184,12 @@ int main(int argc, char **argv)
     clap_process_t proc = {
         -1, FRAMES, NULL, &in_buf, &out_buf, n_in_ports, 1, &g_in_events, &g_out_events,
     };
-    if (n_params > 0)
+    if (mod) {
+        CHECK(n_params > 0 && (info0.flags & CLAP_PARAM_IS_MODULATABLE));
+        set_mod_event(FRAMES / 2, info0.id, info0.max_value - info0.default_value);
+    } else if (n_params > 0) {
         set_event(FRAMES / 2, info0.id, info0.max_value);
+    }
 
     CHECK(plugin->activate(plugin, 48000.0, 1, FRAMES));
     CHECK(plugin->start_processing(plugin));
@@ -173,7 +201,7 @@ int main(int argc, char **argv)
             CHECK(!memcmp(in_data[c], out_data[c], sizeof(in_data[c])));
         for (uint32_t i = 0; i < FRAMES; i++) {
             CHECK(isfinite(out_data[c][i]));
-            if (!strcmp(mode, "gain")) {
+            if (gain) {
                 float g = (float)atof(argv[i < FRAMES / 2 || n_params == 0 ? 3 : 4]);
                 CHECK(fabsf(out_data[c][i] - in_data[c][i] * g) <= 1e-6f * fabsf(in_data[c][i] * g));
             }
@@ -181,8 +209,10 @@ int main(int argc, char **argv)
     }
 
     if (n_params > 0) {
+        /* Modulation is an offset; the value stays where it was. */
+        const double set = mod ? info0.default_value : info0.max_value;
         double v;
-        CHECK(params->get_value(plugin, info0.id, &v) && v == info0.max_value);
+        CHECK(params->get_value(plugin, info0.id, &v) && v == set);
 
         /* State round trip: save, change via flush, load restores. */
         CHECK(state->save(plugin, &(clap_ostream_t){NULL, mem_write}));
@@ -191,7 +221,7 @@ int main(int argc, char **argv)
         CHECK(params->get_value(plugin, info0.id, &v) && v == info0.min_value);
         g_pos = 0;
         CHECK(state->load(plugin, &(clap_istream_t){NULL, mem_read}));
-        CHECK(params->get_value(plugin, info0.id, &v) && v == info0.max_value);
+        CHECK(params->get_value(plugin, info0.id, &v) && v == set);
 
         /* Truncated state is rejected. */
         g_pos = 0;

@@ -1,16 +1,17 @@
-# Plugin spec for the clap and vcv targets: float params with min/max, no Pd-only fields.
-externals:
-  - namespace: my
-    name: gain
-    params:
-      - {name: gain, type: float, min: 0.0, max: 2.0, initial: 1.0, inlet: true, desc: "linear gain"}
-      - {name: pan,  type: float, min: -1.0, max: 1.0, initial: 0.0, desc: "stereo balance"}
-    n_channels: 2
-    meta:
-      desc: |
-        A stereo gain and balance effect.
-      features:
-        - linear gain
-        - stereo balance
-      author: xtgen
-      repo: https://github.com/xtgen/gain.git
+# Plugin spec for the clap and vcv targets: n_channels without a '~' filename is rejected by pd and max.
+namespace: my
+name: gain
+params:
+  - {name: gain, type: float, min: 0.0, max: 2.0, initial: 1.0, desc: "linear gain"}
+  - {name: pan,  type: float, min: -1.0, max: 1.0, initial: 0.0, desc: "stereo balance"}
+n_channels: 2
+meta:
+  desc: |
+    A stereo gain and balance effect.
+  features:
+    - linear gain
+    - stereo balance
+  author: xtgen
+  repo: https://github.com/xtgen/gain.git
+plugin:
+  modulated: [gain]

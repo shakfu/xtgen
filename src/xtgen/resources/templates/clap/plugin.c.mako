@@ -85,13 +85,15 @@ enum {
 typedef struct {
     const char *name;
     double min, max, initial;
+    clap_param_info_flags flags;
 } ${e.name}_param_spec_t;
 
 static const ${e.name}_param_spec_t ${e.name}_param_specs[PARAM_COUNT + 1] = {
 % for p in e.params:
-    { ${c_string(p.name)}, ${repr(float(p.min))}, ${repr(float(p.max))}, ${repr(float(p.initial))} },
+    { ${c_string(p.name)}, ${repr(float(p.min))}, ${repr(float(p.max))}, ${repr(float(p.initial))},
+      CLAP_PARAM_IS_AUTOMATABLE${" | CLAP_PARAM_IS_MODULATABLE" if p.has_inlet else ""} },
 % endfor
-    { NULL, 0, 0, 0 }, /* sentinel: keeps the array non-empty when PARAM_COUNT is 0 */
+    { NULL, 0, 0, 0, 0 }, /* sentinel: keeps the array non-empty when PARAM_COUNT is 0 */
 };
 
 /* Compared at runtime instead of the enum, so PARAM_COUNT == 0 passes -Wtype-limits. */
@@ -108,6 +110,8 @@ typedef struct {
     double sample_rate;
     /* Written on the audio thread (process/flush), read by get_value/save. */
     double params[PARAM_COUNT + 1];
+    /* Offsets from CLAP_EVENT_PARAM_MOD; not saved and not reported by get_value. */
+    double mods[PARAM_COUNT + 1];
 % if d:
     ${d.state_type} *dsp; /* created by activate, used only on the audio thread */
 % endif
@@ -126,7 +130,20 @@ static void ${e.name}_handle_event(${e.name}_t *x, const clap_event_header_t *hd
         const clap_event_param_value_t *ev = (const clap_event_param_value_t *)hdr;
         if (ev->param_id < n_params)
             x->params[ev->param_id] = ev->value;
+    } else if (hdr->type == CLAP_EVENT_PARAM_MOD) {
+        const clap_event_param_mod_t *ev = (const clap_event_param_mod_t *)hdr;
+        if (ev->param_id < n_params
+            && (${e.name}_param_specs[ev->param_id].flags & CLAP_PARAM_IS_MODULATABLE))
+            x->mods[ev->param_id] = ev->amount;
     }
+}
+
+/* The value DSP should use: the param plus its modulation, clamped to range. */
+static double ${e.name}_param_value(const ${e.name}_t *x, uint32_t id)
+{
+    const ${e.name}_param_spec_t *spec = &${e.name}_param_specs[id];
+    double v = x->params[id] + x->mods[id];
+    return v < spec->min ? spec->min : v > spec->max ? spec->max : v;
 }
 
 /*
@@ -181,7 +198,7 @@ static bool ${e.name}_params_get_info(const clap_plugin_t *plugin, uint32_t inde
     const ${e.name}_param_spec_t *spec = &${e.name}_param_specs[index];
     memset(info, 0, sizeof(*info));
     info->id = index;
-    info->flags = CLAP_PARAM_IS_AUTOMATABLE;
+    info->flags = spec->flags;
     snprintf(info->name, sizeof(info->name), "%s", spec->name);
     info->min_value = spec->min;
     info->max_value = spec->max;
@@ -346,7 +363,7 @@ static bool ${e.name}_activate(const clap_plugin_t *plugin, double sample_rate,
 static void ${e.name}_sync_params(${e.name}_t *x)
 {
     for (uint32_t i = 0; i < n_params; i++)
-        ${d.prefix}_set_param(x->dsp, (int)i, (float)x->params[i]);
+        ${d.prefix}_set_param(x->dsp, (int)i, (float)${e.name}_param_value(x, i));
 }
 % else:
 static void ${e.name}_destroy(const clap_plugin_t *plugin)
@@ -447,6 +464,11 @@ static clap_process_status ${e.name}_process(const clap_plugin_t *plugin,
             i = next_ev_frame;
         }
 % else:
+        /* Param values for this segment, modulation included. */
+        double values[PARAM_COUNT + 1];
+        for (uint32_t p = 0; p < n_params; p++)
+            values[p] = ${e.name}_param_value(x, p);
+        (void)values;
         for (; i < next_ev_frame; i++) {
             /* TODO: DSP. Pass-through until implemented. */
             for (uint32_t ch = 0; ch < n_ch; ch++)

@@ -2,6 +2,30 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Releases up to 0.1.2 are recorded only in git history.
 
+## [Unreleased]
+
+### Changed
+
+- Breaking: the spec format is a core plus one block per object model. The top-level `externals` list is gone, and the spec is the one object. `pd` and `max` read the `external` block. `clap` and `vcv` read the `plugin` block. Each target ignores the other's block, so one spec builds for all four targets with no per-target copies. Before, every field sat in one namespace, and plugins rejected the Pd/Max fields. A spec that needed Pd inlets could therefore not build as a plugin. A pre-0.3 spec fails with a migration hint.
+
+  ```yaml
+  namespace: my
+  name: lowpass
+  params: [{name: cutoff, type: float, min: 20, max: 20000, initial: 1000}]
+  external: {inlets: [cutoff], args: [cutoff]}
+  plugin: {modulated: [cutoff]}
+  ```
+
+  Per-param `arg` and `inlet` move into the blocks as lists of param names: `external.args`, `external.inlets` and `plugin.modulated`. Core params are then the same for every target. `counter` now builds as a plugin too.
+
+- Unknown param fields are rejected.
+
+- gen-dsp is installed from PyPI, where 0.6.0 is now published, not from `../gen-dsp`.
+
+### Added
+
+- `plugin.modulated` makes a CLAP param modulatable. The plugin adds `CLAP_EVENT_PARAM_MOD` amounts to the value DSP reads, clamped to the param's range. This replaces the old behaviour, where CLAP ignored `inlet: true`. For graph DSP, `plugin.modulated` may name graph params, which also gives VCV graph modules CV inputs.
+
 ## [0.2.0]
 
 ### Added

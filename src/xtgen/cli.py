@@ -192,7 +192,7 @@ def validate_specification(
         if verbose:
             print(f"Validating specification file: {spec_file}")
 
-        spec_data = TARGETS[target](spec_file).validate()
+        external_data = TARGETS[target](spec_file).validate()
 
         if verbose:
             print("✓ File format valid")
@@ -200,7 +200,6 @@ def validate_specification(
             print("✓ Required fields present")
 
             # Show basic info about the external
-            external_data = spec_data["externals"][0]
             print(f"✓ External name: {external_data['name']}")
             print(f"✓ Namespace: {external_data['namespace']}")
             print(f"✓ Parameters: {len(external_data.get('params', []))}")

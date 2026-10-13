@@ -191,24 +191,33 @@ class Generator:
         """Load the specification and apply this target's rules without writing.
 
         Returns:
-            Parsed specification data
+            The external's fields, with this target's block merged in
 
         Raises:
             FileNotFoundError: If specification file not found
             ValueError: If the specification is invalid for this target
         """
-        spec_data = self.load_specification()
-        self.validate_specification_structure(spec_data)
-        self.build_external(spec_data["externals"][0])
-        return spec_data
+        ext = self.validate_specification_structure(self.load_specification())
+        self.build_external(ext)
+        return ext
 
-    EXTERNAL_KEYS = frozenset({
-        "name", "namespace", "prefix", "alias", "help", "n_channels",
-        "params", "outlets", "message_methods", "type_methods", "meta", "dsp",
-    })
+    CORE_KEYS = frozenset({"name", "namespace", "params", "n_channels", "dsp", "meta"})
+    # One block per object model; a target reads its own and ignores the other.
+    BLOCK_KEYS = {
+        "external": frozenset({
+            "prefix", "alias", "help", "args", "inlets",
+            "outlets", "message_methods", "type_methods",
+        }),
+        "plugin": frozenset({"modulated"}),
+    }
+    # Block fields that list param names -> the param flag each sets.
+    # For plugins, 'inlet' marks a modulated param: a VCV CV input, a CLAP modulatable param.
+    PARAM_LISTS = {"args": "arg", "inlets": "inlet", "modulated": "inlet"}
+    PARAM_KEYS = frozenset({"name", "type", "initial", "min", "max", "desc"})
+    BLOCK = "external"  # the block this target reads
     TARGET = "pd"  # name used in error messages
     SUPPORTS_DSP_GRAPH = False
-    UNUSED_KEYS: Tuple[str, ...] = ()  # fields this target has no use for; rejected
+    UNUSED_KEYS: Tuple[str, ...] = ()  # block fields this target has no use for; rejected
     DSP_NEEDS_TILDE = True  # pd and max embed a graph only in a signal ('~') external
 
     def load_dsp(self, ext: Dict[str, Any]) -> None:
@@ -254,56 +263,58 @@ class Generator:
             target.write_text(text)
             print(target, "rendered")
 
-    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
-        """Validate specification structure and required fields.
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate a specification and merge this target's block into its core fields.
 
         Args:
-            spec_data: Parsed specification data (YAML or JSON) to validate
+            spec_data: Parsed specification data (YAML or JSON)
 
         Returns:
-            True if validation passes
+            The external's fields in the form build_external reads
 
         Raises:
-            ValueError: If specification structure is invalid
+            ValueError: If the specification is invalid for this target
         """
         if not isinstance(spec_data, dict):
             raise ValueError("Specification file must contain a dictionary")
-
-        if "externals" not in spec_data:
-            raise ValueError("Specification file must contain 'externals' key")
-
-        if (
-            not isinstance(spec_data["externals"], list)
-            or len(spec_data["externals"]) == 0
-        ):
-            raise ValueError("'externals' must be a non-empty list")
-
-        # Project path and filenames derive from the spec file stem: one external per file.
-        if len(spec_data["externals"]) > 1:
+        if "externals" in spec_data:
             raise ValueError(
-                f"'externals' must contain exactly one external, got "
-                f"{len(spec_data['externals'])}; use one specification file per external"
+                "'externals' is no longer supported: move its one entry to the top level, "
+                "and its Pd/Max fields into an 'external' block (see the README)"
             )
-
-        ext = spec_data["externals"][0]
-        required_fields = ["name", "namespace"]
-        for required_field in required_fields:
-            if required_field not in ext:
-                raise ValueError(
-                    f"External must contain required field: '{required_field}'"
-                )
+        for required_field in ("name", "namespace"):
+            if required_field not in spec_data:
+                raise ValueError(f"Specification must contain required field: '{required_field}'")
 
         # build_external reads only these keys; reject others rather than drop them.
-        if "inlets" in ext:
-            raise ValueError(
-                "'inlets' is not supported; set 'inlet: true' on each param instead"
-            )
-        unknown = sorted(set(ext) - self.EXTERNAL_KEYS)
-        if unknown:
-            raise ValueError(
-                f"External contains unknown field(s): {', '.join(map(repr, unknown))}"
-            )
-        unused = [k for k in self.UNUSED_KEYS if k in ext]
+        for key in sorted(set(spec_data) - self.CORE_KEYS - set(self.BLOCK_KEYS)):
+            block = next((b for b, keys in self.BLOCK_KEYS.items() if key in keys), None)
+            if block:
+                raise ValueError(f"'{key}' belongs in the '{block}' block")
+            raise ValueError(f"Specification contains unknown field: '{key}'")
+        blocks: Dict[str, Dict[str, Any]] = {}
+        for block, keys in self.BLOCK_KEYS.items():
+            data = spec_data.get(block, {})
+            if not isinstance(data, dict):
+                raise ValueError(f"'{block}' must be a dictionary")
+            unknown = sorted(set(data) - keys)
+            if unknown:
+                raise ValueError(
+                    f"'{block}' contains unknown field(s): {', '.join(map(repr, unknown))}"
+                )
+            for key in keys & set(data) & set(self.PARAM_LISTS):
+                names = data[key]
+                if not (isinstance(names, list) and all(isinstance(n, str) for n in names)):
+                    raise ValueError(f"'{block}.{key}' must be a list of param names")
+                if len(set(names)) != len(names):
+                    raise ValueError(f"'{block}.{key}' names a param twice")
+            blocks[block] = data
+
+        own = blocks[self.BLOCK]
+        ext: Dict[str, Any] = {k: v for k, v in spec_data.items() if k in self.CORE_KEYS}
+        ext.update((k, v) for k, v in own.items() if k not in self.PARAM_LISTS)
+
+        unused = [f"{self.BLOCK}.{k}" for k in self.UNUSED_KEYS if k in own]
         # Channels only exist on signal objects.
         if not self.is_dsp and "n_channels" in ext and self.TARGET in ("pd", "max"):
             unused.append("n_channels")
@@ -314,21 +325,30 @@ class Generator:
                 + ("; n_channels needs a signal object ('~' spec filename)"
                    if "n_channels" in unused else "")
             )
+        if "params" in ext:
+            if not isinstance(ext["params"], list):
+                raise ValueError("'params' must be a list")
+            for p in ext["params"]:
+                if not isinstance(p, dict):
+                    raise ValueError("Each parameter must be a dictionary")
+                moved = {"arg", "inlet"} & set(p)
+                if moved:
+                    raise ValueError(
+                        f"Parameter field(s) {', '.join(map(repr, sorted(moved)))} moved to "
+                        "'external.args', 'external.inlets' and 'plugin.modulated'"
+                    )
+                unknown = sorted(set(p) - self.PARAM_KEYS)
+                if unknown:
+                    raise ValueError(
+                        f"Parameter contains unknown field(s): {', '.join(map(repr, unknown))}"
+                    )
         if "dsp" in ext:
             self.load_dsp(ext)
 
         # Validate optional fields have correct types
-        if "params" in ext and not isinstance(ext["params"], list):
-            raise ValueError("'params' must be a list")
-
-        if "outlets" in ext and not isinstance(ext["outlets"], list):
-            raise ValueError("'outlets' must be a list")
-
-        if "message_methods" in ext and not isinstance(ext["message_methods"], list):
-            raise ValueError("'message_methods' must be a list")
-
-        if "type_methods" in ext and not isinstance(ext["type_methods"], list):
-            raise ValueError("'type_methods' must be a list")
+        for key in ("outlets", "message_methods", "type_methods"):
+            if key in ext and not isinstance(ext[key], list):
+                raise ValueError(f"'{key}' must be a list")
 
         # Validate component structures: (spec key, label, required fields)
         components = [
@@ -347,21 +367,41 @@ class Generator:
                             f"{label} must contain required field: '{required_field}'"
                         )
 
+        # Resolved after load_dsp, which supplies a graph's params. Both blocks are
+        # checked, so a typo in the other block fails here too.
+        param_names = [p["name"] for p in ext.get("params", [])]
+        for block, data in blocks.items():
+            for key in self.PARAM_LISTS.keys() & set(data):
+                for name in data[key]:
+                    if name not in param_names:
+                        raise ValueError(f"'{block}.{key}' names unknown param {name!r}")
+        flagged = {self.PARAM_LISTS[k]: set(v) for k, v in own.items() if k in self.PARAM_LISTS}
+        if "dsp" in ext and self.BLOCK == "external" and any(flagged.values()):
+            raise ValueError(
+                "'external.args' and 'external.inlets' cannot name graph params; "
+                "each is set by a message of its name"
+            )
+        if "params" in ext:
+            ext["params"] = [
+                {**p, **{flag: p["name"] in names for flag, names in flagged.items()}}
+                for p in ext["params"]
+            ]
+
         # Every template renders these meta keys.
         meta = ext.get("meta")
         if not isinstance(meta, dict):
-            raise ValueError("External must contain a 'meta' dictionary")
+            raise ValueError("Specification must contain a 'meta' dictionary")
         for required_field in ["desc", "features", "author", "repo"]:
             if required_field not in meta:
                 raise ValueError(f"'meta' must contain required field: '{required_field}'")
 
-        return True
+        return ext
 
     def build_external(self, ext_data: Dict[str, Any]) -> External:
         """Build an External and its components from validated specification data.
 
         Args:
-            ext_data: One entry of the specification's 'externals' list
+            ext_data: External fields from validate_specification_structure
 
         Returns:
             External whose params, outlets and methods have been type-checked
@@ -414,9 +454,7 @@ class Generator:
         # Load specification using the new unified method
         spec_data: Dict[str, Any] = self.load_specification()
 
-        # Validate specification structure
-        self.validate_specification_structure(spec_data)
-        ext_data: Dict[str, Any] = spec_data["externals"][0]
+        ext_data: Dict[str, Any] = self.validate_specification_structure(spec_data)
 
         try:
             # Through the lookup, so templates can import shared defs (<%namespace>).
@@ -449,14 +487,13 @@ class Generator:
 
 
 class PluginProject(Generator):
-    """Base for plugin targets, which have no Pd object model.
+    """Base for plugin targets, which read the 'plugin' block, not the Pd object model.
 
     Plugins always process audio, so a '~' in the spec filename is dropped
     rather than switching to a DSP template.
     """
 
-    # Pd/Max object-model fields with no plugin equivalent.
-    PD_ONLY_KEYS = ("prefix", "alias", "help", "outlets", "message_methods", "type_methods")
+    BLOCK = "plugin"
     TARGET = "plugin"  # name used in error messages
     DSP_NEEDS_TILDE = False
 
@@ -468,22 +505,15 @@ class PluginProject(Generator):
         self.fullname = self.name
         self.project_path = self.target_dir / self.name
 
-    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
-        """Validate as for Pd, then reject fields the plugin target cannot express.
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate the core and 'plugin' block, then apply the plugin param rules.
 
         Raises:
-            ValueError: If the specification uses Pd-only fields or invalid params
+            ValueError: If the specification has invalid names or params
         """
-        super().validate_specification_structure(spec_data)
-        ext = spec_data["externals"][0]
+        ext = super().validate_specification_structure(spec_data)
         target = self.TARGET
 
-        pd_only = [k for k in self.PD_ONLY_KEYS if k in ext]
-        if pd_only:
-            raise ValueError(
-                f"Field(s) not supported by the {target} target: "
-                f"{', '.join(map(repr, pd_only))}"
-            )
         # Names become C/C++ identifiers, plugin ids and VCV slugs.
         for key in ("name", "namespace"):
             if not (isinstance(ext[key], str) and ext[key].isascii() and ext[key].isidentifier()):
@@ -499,10 +529,6 @@ class PluginProject(Generator):
             if p["type"] != "float":
                 raise ValueError(
                     f"Parameter '{name}': the {target} target supports only float params"
-                )
-            if p.get("arg"):
-                raise ValueError(
-                    f"Parameter '{name}': 'arg' is not supported by the {target} target"
                 )
             for bound in ("min", "max"):
                 if bound not in p:
@@ -520,7 +546,7 @@ class PluginProject(Generator):
                     f"Parameter '{name}' needs min < max and min <= initial <= max, "
                     f"got min={values[0]}, initial={values[1]}, max={values[2]}"
                 )
-        return True
+        return ext
 
 
 class ClapProject(PluginProject):
@@ -622,17 +648,17 @@ class MaxProject(Generator):
     SUPPORTS_DSP_GRAPH = True
     UNUSED_KEYS = ("help",)  # the Max SDK has no call to name a help file
 
-    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate as for Pd, then reject type methods Max has no message for.
 
         Raises:
             ValueError: If the specification is invalid for Max
         """
-        super().validate_specification_structure(spec_data)
-        for m in spec_data["externals"][0].get("type_methods", []):
+        ext = super().validate_specification_structure(spec_data)
+        for m in ext.get("type_methods", []):
             if m["type"] == "pointer":
                 raise ValueError("Type method 'pointer' is not supported by the max target")
-        return True
+        return ext
 
     def generate(self, force: bool = False) -> None:
         """Generate Max/MSP external project with all required files.
@@ -677,14 +703,13 @@ class PdProject(Generator):
 
     SUPPORTS_DSP_GRAPH = True
 
-    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> bool:
+    def validate_specification_structure(self, spec_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validate, then reject a float method that a signal inlet would replace.
 
         Raises:
             ValueError: If the specification is invalid for Pd
         """
-        super().validate_specification_structure(spec_data)
-        ext = spec_data["externals"][0]
+        ext = super().validate_specification_structure(spec_data)
         # CLASS_MAINSIGNALIN replaces the class's float method; a graph with no inputs has none.
         has_signal_inlet = self.is_dsp and (self.dsp is None or self.dsp.n_inputs > 0)
         if has_signal_inlet and any(m["type"] == "float" for m in ext.get("type_methods", [])):
@@ -692,7 +717,7 @@ class PdProject(Generator):
                 "A 'float' type method conflicts with the main signal inlet, "
                 "which Pd gives its own float method"
             )
-        return True
+        return ext
 
     def generate(self, force: bool = False) -> None:
         """Generate PureData external project with all required files.
